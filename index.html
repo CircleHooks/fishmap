@@ -246,6 +246,7 @@
  var LAKE_CENTER = [41.745230, -88.862420];
  var DEFAULT_ZOOM = 14;
  var STORAGE_KEY = 'fishmap_catches';
+ var MIN_LABEL_DISTANCE = 0.003; /* Fix 1: minimum 0.003 degrees (~300m) between any two labels */
 
  var map = L.map('map', { center: LAKE_CENTER, zoom: DEFAULT_ZOOM, zoomControl: true });
 
@@ -256,15 +257,23 @@
  var depthLabelPane = map.createPane('labelPane');
  map.getPane('labelPane').style.zIndex = 500;
 
- /* Fix 1: HOT OSM tiles — warm beige land is hue-rotated green via CSS filter.
+ /* HOT OSM tiles — warm beige land is hue-rotated green via CSS filter.
     #map background #8DB87A provides green fallback while tiles load. */
  L.tileLayer(
  'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
  { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors | Tiles: HOT' }
  ).addTo(map);
 
+ /* Fix 2: Zoom-dependent contour style.
+    zoom < 13  → opacity 0.3, fillOpacity 0.15 (lighter at low zoom)
+    zoom >= 13 → opacity 0.8, fillOpacity 0.4  (full detail at high zoom) */
  function getContourStyle() {
- return { color: '#5A5A5A', weight: 1, opacity: 1.0, fillOpacity: 0 };
+ var zoom = map.getZoom();
+ if (zoom < 13) {
+   return { color: '#5A5A5A', weight: 1, opacity: 0.3, fillOpacity: 0.15 };
+ } else {
+   return { color: '#5A5A5A', weight: 1, opacity: 0.8, fillOpacity: 0.4 };
+ }
  }
 
  var geoJsonLayer = null;
@@ -381,19 +390,24 @@
  updateContoursForZoom();
  }
 
+ /* Fix 2: opacity slider now scales the zoom-appropriate base opacity */
  function updateContoursForZoom() {
  var zoom = map.getZoom();
  contourFeatures = zoom < 13 ? allContourFeatures.filter(function(f) { return f.properties.depth % 5 === 0; }) : allContourFeatures;
  if (geoJsonLayer) map.removeLayer(geoJsonLayer);
  geoJsonLayer = L.geoJSON({ type: 'FeatureCollection', features: contourFeatures }, { pane: 'contourPane', style: getContourStyle, onEachFeature: function(feature, layer) { layer.bindPopup('Depth: ' + feature.properties.depth + ' ft'); } }).addTo(map);
- geoJsonLayer.setStyle({ opacity: document.getElementById('opacity-slider').value / 100 });
+ var sliderVal = document.getElementById('opacity-slider').value / 100;
+ var baseStyle = getContourStyle();
+ geoJsonLayer.setStyle({ opacity: baseStyle.opacity * sliderVal, fillOpacity: baseStyle.fillOpacity * sliderVal });
  addLabels(contourFeatures);
  }
 
  var activeLabelMarkers = [];
  function clearLabels() { activeLabelMarkers.forEach(function(m) { map.removeLayer(m); }); activeLabelMarkers = []; }
+
+ /* Fix 3: Updated label style — 11px, weight 600, color #1a2e5a, white text-shadow for legibility */
  function placeLabel(latlng, depth) {
- var marker = L.marker(latlng, { icon: L.divIcon({ className: '', html: '<div style="color:#2B3D8F;font-size:12px;font-weight:400;font-family:sans-serif;white-space:nowrap;pointer-events:none;">' + depth + '</div>', iconSize: [20, 14], iconAnchor: [10, 7] }), pane: 'labelPane', interactive: false });
+ var marker = L.marker(latlng, { icon: L.divIcon({ className: '', html: '<div style="color:#1a2e5a;font-size:11px;font-weight:600;font-family:sans-serif;white-space:nowrap;pointer-events:none;text-shadow:0 1px 2px rgba(255,255,255,0.8);">' + depth + '</div>', iconSize: [20, 14], iconAnchor: [10, 7] }), pane: 'labelPane', interactive: false });
  marker.addTo(map);
  activeLabelMarkers.push(marker);
  }
@@ -408,10 +422,12 @@
  return geom.coordinates || [];
  }
 
- /* Label placement — single pass, exactly ONE label per depth value.
+ /* Label placement with cell-blocking grid (Fix 1).
+    Enforces minimum distance of MIN_LABEL_DISTANCE (0.003 degrees, ~300m) between any two labels.
     1. Group all candidate coords by depth (11 samples per feature).
-    2. For each depth, place the first valid in-bounds, in-lake candidate.
-    3. No second pass. No cell blocking. Guarantees one label per depth. */
+    2. For each depth, place the first valid in-bounds, in-lake candidate
+       that is at least MIN_LABEL_DISTANCE away from all previously placed labels.
+    3. Guarantees at most one label per depth with no crowding. */
  function addLabels(features) {
  clearLabels();
  var bounds = map.getBounds();
@@ -434,7 +450,20 @@
    }
  }
 
- /* For each depth, place exactly ONE label at the first valid candidate */
+ /* Fix 1: Track all placed label positions for minimum-distance enforcement */
+ var placedPositions = []; /* array of [lng, lat] */
+
+ function isTooClose(lng, lat) {
+   for (var i = 0; i < placedPositions.length; i++) {
+     var dx = lng - placedPositions[i][0];
+     var dy = lat - placedPositions[i][1];
+     if (Math.sqrt(dx * dx + dy * dy) < MIN_LABEL_DISTANCE) return true;
+   }
+   return false;
+ }
+
+ /* For each depth, place exactly ONE label at the first valid candidate
+    that respects the minimum distance from all other placed labels */
  var placedDepths = {};
  var depthKeys = Object.keys(depthGroups);
  for (var di = 0; di < depthKeys.length; di++) {
@@ -446,8 +475,11 @@
      var latlng = L.latLng(pt[1], pt[0]);
      if (!bounds.contains(latlng)) continue;
      if (lakeTurfPolygon && !turf.booleanPointInPolygon(turf.point(pt), lakeTurfPolygon)) continue;
+     /* Fix 1: Reject candidate if too close to any previously placed label */
+     if (isTooClose(pt[0], pt[1])) continue;
      placeLabel(latlng, depth);
      placedDepths[depth] = true;
+     placedPositions.push([pt[0], pt[1]]);
      break; /* STOP — one label per depth, period */
    }
  }
@@ -455,7 +487,14 @@
 
  map.on('zoomend', function() { if (allContourFeatures.length) updateContoursForZoom(); });
  map.on('moveend', function() { if (contourFeatures.length) addLabels(contourFeatures); });
- document.getElementById('opacity-slider').addEventListener('input', function () { if (geoJsonLayer) geoJsonLayer.setStyle({ opacity: this.value / 100 }); });
+ /* Fix 2: Slider scales the zoom-appropriate base opacity */
+ document.getElementById('opacity-slider').addEventListener('input', function () {
+ if (geoJsonLayer) {
+   var sliderVal = this.value / 100;
+   var baseStyle = getContourStyle();
+   geoJsonLayer.setStyle({ opacity: baseStyle.opacity * sliderVal, fillOpacity: baseStyle.fillOpacity * sliderVal });
+ }
+ });
 
  var blueDotIcon = L.divIcon({ className: '', html: '<div class="blue-dot"></div>', iconSize: [16,16], iconAnchor: [8,8] });
  var userMarker = null, accuracyCircle = null, userLatLng = null;
