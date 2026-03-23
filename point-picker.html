@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Point Picker</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body { margin: 0; font-family: monospace; background: #111; color: #eee; }
+    #map { height: 85vh; }
+    #info {
+      padding: 10px 16px; background: #1a1a2e;
+      display: flex; align-items: center; gap: 20px; font-size: 14px;
+    }
+    #coords { color: #7ecef4; font-size: 16px; font-weight: bold; }
+    button { padding: 6px 14px; background: #e94560; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<div id="info">
+  <div>Click anywhere on the map:</div>
+  <div id="coords">—</div>
+  <button onclick="copyCoords()">Copy</button>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  const map = L.map('map').setView([44.4373, -88.0648], 14);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }).addTo(map);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { opacity: 0.3 }).addTo(map);
+
+  let lastLat = null, lastLng = null;
+  let marker = null;
+
+  map.on('click', e => {
+    lastLat = e.latlng.lat.toFixed(7);
+    lastLng = e.latlng.lng.toFixed(7);
+    document.getElementById('coords').textContent = `${lastLat}, ${lastLng}`;
+    if (marker) marker.remove();
+    marker = L.marker([e.latlng.lat, e.latlng.lng]).addTo(map)
+      .bindPopup(`${lastLat}, ${lastLng}`).openPopup();
+  });
+
+  function copyCoords() {
+    if (!lastLat) return;
+    navigator.clipboard.writeText(`${lastLat}, ${lastLng}`);
+  }
+</script>
+</body>
+</html>

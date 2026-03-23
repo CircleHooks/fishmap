@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Tagger — Depth Point Entry</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body { margin: 0; font-family: monospace; background: #111; color: #eee; }
+    #map { height: 70vh; }
+    #panel { padding: 12px; background: #1a1a2e; }
+    #panel h3 { color: #7ecef4; margin: 0 0 8px; }
+    input, select { background: #222; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 6px; margin: 4px; }
+    button { padding: 8px 14px; background: #e94560; color: #fff; border: none; border-radius: 4px; cursor: pointer; margin: 4px; }
+    #output { white-space: pre; font-size: 11px; color: #aaa; max-height: 120px; overflow-y: auto; padding: 8px; background: #111; border-radius: 4px; margin-top: 8px; }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<div id="panel">
+  <h3>🏷 Depth Tagger</h3>
+  <p>Click map → enter depth → save point.</p>
+  <label>Depth (ft): <input type="number" id="depth-input" min="0" max="200" placeholder="e.g. 12" /></label>
+  <label>Label: <input type="text" id="label-input" placeholder="optional" /></label>
+  <button onclick="savePoint()">Save Point</button>
+  <button onclick="copyOutput()">Copy GeoJSON</button>
+  <button onclick="clearAll()">Clear</button>
+  <div id="output">No points saved yet.</div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  const map = L.map('map').setView([44.4373, -88.0648], 14);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }).addTo(map);
+
+  let pendingLat = null, pendingLng = null;
+  const savedPoints = [];
+
+  map.on('click', e => {
+    pendingLat = e.latlng.lat;
+    pendingLng = e.latlng.lng;
+    document.getElementById('depth-input').focus();
+  });
+
+  function savePoint() {
+    if (pendingLat === null) { alert('Click the map first to select a location.'); return; }
+    const depth = parseFloat(document.getElementById('depth-input').value);
+    const label = document.getElementById('label-input').value || `${depth}ft`;
+    if (isNaN(depth)) { alert('Enter a depth value.'); return; }
+
+    savedPoints.push({ lat: pendingLat, lng: pendingLng, depth, label });
+    L.circleMarker([pendingLat, pendingLng], { radius: 6, color: '#7ecef4' })
+      .bindPopup(`${label} — ${depth} ft`).addTo(map);
+
+    document.getElementById('depth-input').value = '';
+    document.getElementById('label-input').value = '';
+    pendingLat = null; pendingLng = null;
+    updateOutput();
+  }
+
+  function updateOutput() {
+    const geo = {
+      type: 'FeatureCollection',
+      features: savedPoints.map(p => ({
+        type: 'Feature',
+        properties: { depth: p.depth, label: p.label },
+        geometry: { type: 'Point', coordinates: [p.lng, p.lat] }
+      }))
+    };
+    document.getElementById('output').textContent = JSON.stringify(geo, null, 2);
+  }
+
+  function copyOutput() { navigator.clipboard.writeText(document.getElementById('output').textContent); }
+  function clearAll() { savedPoints.length = 0; updateOutput(); }
+</script>
+</body>
+</html>

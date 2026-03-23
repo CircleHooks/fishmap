@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Map Maker — Alignment Tool</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body { margin: 0; font-family: monospace; background: #111; color: #eee; }
+    #map { height: 100vh; }
+    #panel {
+      position: fixed; top: 10px; right: 10px; z-index: 9999;
+      background: rgba(0,0,0,0.8); padding: 12px; border-radius: 8px;
+      min-width: 240px; font-size: 13px;
+    }
+    #panel h3 { margin: 0 0 8px; color: #7ecef4; }
+    #output { white-space: pre; font-size: 11px; color: #aaa; max-height: 300px; overflow-y: auto; }
+    button { margin: 4px 0; padding: 6px 10px; background: #e94560; color: #fff; border: none; border-radius: 4px; cursor: pointer; width: 100%; }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<div id="panel">
+  <h3>🗺 Map Maker</h3>
+  <p>Click map to capture coordinates.</p>
+  <button onclick="clearPoints()">Clear Points</button>
+  <button onclick="copyOutput()">Copy GeoJSON</button>
+  <div id="output">No points yet.</div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  const map = L.map('map').setView([44.4373, -88.0648], 14);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }).addTo(map);
+
+  const points = [];
+
+  map.on('click', e => {
+    const { lat, lng } = e.latlng;
+    points.push([lng, lat]);
+    L.circleMarker([lat, lng], { radius: 5, color: '#e94560' })
+      .bindPopup(`${lat.toFixed(6)}, ${lng.toFixed(6)}`).addTo(map).openPopup();
+    updateOutput();
+  });
+
+  function updateOutput() {
+    const geo = {
+      type: 'FeatureCollection',
+      features: points.map((c, i) => ({
+        type: 'Feature',
+        properties: { id: i },
+        geometry: { type: 'Point', coordinates: c }
+      }))
+    };
+    document.getElementById('output').textContent = JSON.stringify(geo, null, 2);
+  }
+
+  function clearPoints() { points.length = 0; document.getElementById('output').textContent = 'No points yet.'; }
+  function copyOutput() { navigator.clipboard.writeText(document.getElementById('output').textContent); }
+</script>
+</body>
+</html>
