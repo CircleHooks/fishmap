@@ -93,6 +93,11 @@
  background: #8DB87A;
  }
 
+ /* Green land tint on OSM tiles — lake polygon in lakePane sits above, unaffected */
+ .leaflet-tile-pane {
+ filter: hue-rotate(85deg) saturate(0.5) brightness(1.05);
+ }
+
  /* ===== BOTTOM BAR ===== */
  #bottom-bar {
  display: flex;
@@ -250,10 +255,10 @@
  var depthLabelPane = map.createPane('labelPane');
  map.getPane('labelPane').style.zIndex = 500;
 
- /* Stadia Stamen Terrain — green land with roads and labels */
+ /* Fix 1: Standard OSM tiles — CSS hue-rotate on .leaflet-tile-pane handles green land */
  L.tileLayer(
- 'https://tiles.stadiamaps.com/tiles/stamen_terrain/{z}/{x}/{y}{r}.png',
- { maxZoom: 19, attribution: '&copy; <a href="https://stamen.com">Stamen Design</a>, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }
+ 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+ { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }
  ).addTo(map);
 
  function getContourStyle() {
@@ -262,6 +267,7 @@
 
  var geoJsonLayer = null;
  var lakeTurfPolygon = null;
+ var lakeTurfBoundary = null;
 
  fetch('data/shabbona-boundary.geojson')
  .then(function(res) { return res.json(); })
@@ -271,19 +277,34 @@
  var latlngs = feature.geometry.coordinates[0].map(function(c) { return [c[1], c[0]]; });
  L.polygon(latlngs, { color: 'none', fillColor: '#7FB5D5', fillOpacity: 1.0, interactive: false, pane: 'lakePane' }).addTo(map);
  lakeTurfPolygon = turf.polygon([feature.geometry.coordinates[0]]);
+ lakeTurfBoundary = turf.polygonToLine(lakeTurfPolygon);
  loadContours();
  })
  .catch(function() { loadContours(); });
 
- function isSegmentInsideLake(coords) {
+ /* Fix 3: Upgraded clipping — use turf.booleanWithin to check entire line is inside lake */
+ function isLineFullyInsideLake(feature) {
  if (!lakeTurfPolygon) return true;
  try {
- var checks = [coords[0], coords[coords.length-1], coords[Math.floor(coords.length/2)], coords[Math.floor(coords.length/4)], coords[Math.floor(coords.length*3/4)]];
- for (var i = 0; i < checks.length; i++) {
- if (!turf.booleanPointInPolygon(turf.point(checks[i]), lakeTurfPolygon)) return false;
+ var line = turf.lineString(feature.geometry.coordinates);
+ /* Check if the line is fully within the lake polygon */
+ if (turf.booleanWithin(line, lakeTurfPolygon)) return true;
+ /* If not fully within, check if it intersects the boundary (crosses land) */
+ /* A line that intersects the boundary has parts outside */
+ return false;
+ } catch(e) {
+ /* Fallback: sample many points along the line */
+ try {
+ var coords = feature.geometry.coordinates;
+ var step = Math.max(1, Math.floor(coords.length / 10));
+ for (var i = 0; i < coords.length; i += step) {
+ if (!turf.booleanPointInPolygon(turf.point(coords[i]), lakeTurfPolygon)) return false;
  }
+ /* Always check last point */
+ if (!turf.booleanPointInPolygon(turf.point(coords[coords.length - 1]), lakeTurfPolygon)) return false;
  return true;
- } catch(e) { return true; }
+ } catch(e2) { return true; }
+ }
  }
 
  function loadContours() {
@@ -294,7 +315,8 @@
  if (lakeTurfPolygon) {
  data.features = data.features.filter(function(f) {
  var coords = f.geometry.coordinates;
- return coords && coords.length >= 2 && isSegmentInsideLake(coords);
+ if (!coords || coords.length < 2) return false;
+ return isLineFullyInsideLake(f);
  });
  }
  renderContours(data);
@@ -329,55 +351,71 @@
  activeLabelMarkers.push(marker);
  }
 
+ /* Fix 2: Improved label logic */
  function addLabels(features) {
  clearLabels();
  var zoom = map.getZoom();
  var bounds = map.getBounds();
  var labelInterval, cellSize;
  if (zoom < 13) { labelInterval = 5; cellSize = 120; }
- else if (zoom <= 14) { labelInterval = 1; cellSize = 60; }
- else { labelInterval = 1; cellSize = 30; }
+ else if (zoom <= 14) { labelInterval = 1; cellSize = 40; }
+ else { labelInterval = 1; cellSize = 20; }
 
  var placedCells = {}, placedDepths = {};
 
+ /* First pass: place labels with cell-based overlap prevention */
  features.forEach(function(feature) {
  var d = feature.properties.depth;
  if (d <= 0 || d % labelInterval !== 0) return;
  var coords = feature.geometry.coordinates;
  if (coords.length < 2) return;
 
+ /* Generate candidate positions — sample densely enough to guarantee
+    at least one in-bounds hit per visible segment */
  var candidates;
  if (zoom >= 15) {
  candidates = [];
- var step = Math.max(1, Math.floor(coords.length / 8));
+ var step = Math.max(1, Math.floor(coords.length / 12));
  for (var s = 0; s < coords.length; s += step) candidates.push(s);
+ if (candidates[candidates.length - 1] !== coords.length - 1) candidates.push(coords.length - 1);
  } else if (zoom >= 13) {
- candidates = [Math.floor(coords.length/2), Math.floor(coords.length/4), Math.floor(coords.length*3/4), Math.floor(coords.length/8), Math.floor(coords.length*7/8)];
+ candidates = [];
+ var step2 = Math.max(1, Math.floor(coords.length / 10));
+ for (var s2 = 0; s2 < coords.length; s2 += step2) candidates.push(s2);
+ if (candidates[candidates.length - 1] !== coords.length - 1) candidates.push(coords.length - 1);
  } else {
- candidates = [Math.floor(coords.length/2)];
+ candidates = [Math.floor(coords.length / 2)];
  }
 
+ var placedThisFeature = false;
  for (var i = 0; i < candidates.length; i++) {
- var idx = Math.min(candidates[i], coords.length-1);
+ var idx = Math.min(candidates[i], coords.length - 1);
  var latlng = L.latLng(coords[idx][1], coords[idx][0]);
  if (!bounds.contains(latlng)) continue;
  var px = map.latLngToContainerPoint(latlng);
- var cellKey = Math.floor(px.x/cellSize) + ',' + Math.floor(px.y/cellSize);
+ var cellKey = Math.floor(px.x / cellSize) + ',' + Math.floor(px.y / cellSize);
  if (placedCells[cellKey]) continue;
  placedCells[cellKey] = true;
  placedDepths[d] = true;
  placeLabel(latlng, d);
+ placedThisFeature = true;
  if (zoom <= 14) break;
  }
  });
 
+ /* Second pass: force-place ONE label for any depth that has zero labels in viewport.
+    Once a depth is force-placed, skip it — prevents redundant duplicates. */
  features.forEach(function(feature) {
  var d = feature.properties.depth;
  if (d <= 0 || d % labelInterval !== 0 || placedDepths[d]) return;
  var coords = feature.geometry.coordinates;
  for (var i = 0; i < coords.length; i++) {
  var latlng = L.latLng(coords[i][1], coords[i][0]);
- if (bounds.contains(latlng)) { placedDepths[d] = true; placeLabel(latlng, d); break; }
+ if (bounds.contains(latlng)) {
+ placedDepths[d] = true;
+ placeLabel(latlng, d);
+ break;
+ }
  }
  });
  }
