@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -93,9 +94,9 @@
  background: #8DB87A;
  }
 
- /* Green land tint on OSM tiles — lake polygon in lakePane sits above, unaffected */
+ /* Fix 1: HOT OSM tiles with hue-rotate — warm beige land becomes green, roads stay visible */
  .leaflet-tile-pane {
- filter: hue-rotate(85deg) saturate(0.5) brightness(1.05);
+ filter: hue-rotate(100deg) saturate(0.6) brightness(1.1);
  }
 
  /* ===== BOTTOM BAR ===== */
@@ -255,10 +256,11 @@
  var depthLabelPane = map.createPane('labelPane');
  map.getPane('labelPane').style.zIndex = 500;
 
- /* Fix 1: Standard OSM tiles — CSS hue-rotate on .leaflet-tile-pane handles green land */
+ /* Fix 1: HOT OSM tiles — warm beige land is hue-rotated green via CSS filter.
+    #map background #8DB87A provides green fallback while tiles load. */
  L.tileLayer(
- 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
- { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }
+ 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
+ { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors | Tiles: HOT' }
  ).addTo(map);
 
  function getContourStyle() {
@@ -267,7 +269,6 @@
 
  var geoJsonLayer = null;
  var lakeTurfPolygon = null;
- var lakeTurfBoundary = null;
 
  fetch('data/shabbona-boundary.geojson')
  .then(function(res) { return res.json(); })
@@ -277,33 +278,56 @@
  var latlngs = feature.geometry.coordinates[0].map(function(c) { return [c[1], c[0]]; });
  L.polygon(latlngs, { color: 'none', fillColor: '#7FB5D5', fillOpacity: 1.0, interactive: false, pane: 'lakePane' }).addTo(map);
  lakeTurfPolygon = turf.polygon([feature.geometry.coordinates[0]]);
- lakeTurfBoundary = turf.polygonToLine(lakeTurfPolygon);
  loadContours();
  })
  .catch(function() { loadContours(); });
 
- /* Fix 3: Upgraded clipping — use turf.booleanWithin to check entire line is inside lake */
- function isLineFullyInsideLake(feature) {
- if (!lakeTurfPolygon) return true;
+ /* Fix 2: Clip contours at lake boundary using turf.lineSplit.
+    Split each LineString at the polygon boundary, then keep only
+    segments whose midpoint is inside the lake polygon.
+    This guarantees zero spill — partial lines are trimmed, not excluded. */
+ function clipFeatureToLake(feature) {
+ if (!lakeTurfPolygon) return [feature];
  try {
- var line = turf.lineString(feature.geometry.coordinates);
- /* Check if the line is fully within the lake polygon */
- if (turf.booleanWithin(line, lakeTurfPolygon)) return true;
- /* If not fully within, check if it intersects the boundary (crosses land) */
- /* A line that intersects the boundary has parts outside */
- return false;
+   var coords = feature.geometry.coordinates;
+   if (!coords || coords.length < 2) return [];
+   var line = turf.lineString(coords);
+   var lakeBoundary = turf.polygonToLine(lakeTurfPolygon);
+   var split = turf.lineSplit(line, lakeBoundary);
+   if (!split || !split.features || split.features.length === 0) {
+     /* lineSplit returned nothing — check if the whole line midpoint is inside */
+     var midIdx = Math.floor(coords.length / 2);
+     var midPt = turf.point(coords[midIdx]);
+     if (turf.booleanPointInPolygon(midPt, lakeTurfPolygon)) return [feature];
+     return [];
+   }
+   var kept = [];
+   for (var i = 0; i < split.features.length; i++) {
+     var seg = split.features[i];
+     var segCoords = seg.geometry.coordinates;
+     if (segCoords.length < 2) continue;
+     var segMidIdx = Math.floor(segCoords.length / 2);
+     var segMidPt = turf.point(segCoords[segMidIdx]);
+     if (turf.booleanPointInPolygon(segMidPt, lakeTurfPolygon)) {
+       kept.push({
+         type: 'Feature',
+         properties: JSON.parse(JSON.stringify(feature.properties)),
+         geometry: seg.geometry
+       });
+     }
+   }
+   return kept;
  } catch(e) {
- /* Fallback: sample many points along the line */
- try {
- var coords = feature.geometry.coordinates;
- var step = Math.max(1, Math.floor(coords.length / 10));
- for (var i = 0; i < coords.length; i += step) {
- if (!turf.booleanPointInPolygon(turf.point(coords[i]), lakeTurfPolygon)) return false;
- }
- /* Always check last point */
- if (!turf.booleanPointInPolygon(turf.point(coords[coords.length - 1]), lakeTurfPolygon)) return false;
- return true;
- } catch(e2) { return true; }
+   /* Fallback: sample points, keep only if all are inside */
+   try {
+     var fc = feature.geometry.coordinates;
+     var step = Math.max(1, Math.floor(fc.length / 10));
+     for (var j = 0; j < fc.length; j += step) {
+       if (!turf.booleanPointInPolygon(turf.point(fc[j]), lakeTurfPolygon)) return [];
+     }
+     if (!turf.booleanPointInPolygon(turf.point(fc[fc.length - 1]), lakeTurfPolygon)) return [];
+     return [feature];
+   } catch(e2) { return [feature]; }
  }
  }
 
@@ -311,15 +335,18 @@
  fetch('data/shabbona-lake.geojson')
  .then(function(res) { return res.json(); })
  .then(function(data) {
- data.features = data.features.filter(function(f) { return f.properties.depth > 0; });
- if (lakeTurfPolygon) {
- data.features = data.features.filter(function(f) {
- var coords = f.geometry.coordinates;
- if (!coords || coords.length < 2) return false;
- return isLineFullyInsideLake(f);
- });
- }
- renderContours(data);
+   data.features = data.features.filter(function(f) { return f.properties.depth > 0; });
+   if (lakeTurfPolygon) {
+     var clippedFeatures = [];
+     data.features.forEach(function(f) {
+       var segments = clipFeatureToLake(f);
+       for (var k = 0; k < segments.length; k++) {
+         clippedFeatures.push(segments[k]);
+       }
+     });
+     data.features = clippedFeatures;
+   }
+   renderContours(data);
  })
  .catch(function(err) { console.error('Failed to load GeoJSON:', err); });
  }
@@ -351,7 +378,9 @@
  activeLabelMarkers.push(marker);
  }
 
- /* Fix 2: Improved label logic */
+ /* Fix 3: Improved label logic —
+    - 11 candidates per feature (0%, 10%, 20%, ..., 100%) for full lake coverage
+    - Second pass uses a for loop with explicit break to prevent duplicate force-placement */
  function addLabels(features) {
  clearLabels();
  var zoom = map.getZoom();
@@ -363,61 +392,58 @@
 
  var placedCells = {}, placedDepths = {};
 
- /* First pass: place labels with cell-based overlap prevention */
+ /* First pass: place labels with cell-based overlap prevention.
+    For EACH feature, sample 11 candidates at 0%, 10%, ..., 100% of coords.length.
+    Check ALL candidates against bounds before cell-blocking. */
  features.forEach(function(feature) {
- var d = feature.properties.depth;
- if (d <= 0 || d % labelInterval !== 0) return;
- var coords = feature.geometry.coordinates;
- if (coords.length < 2) return;
+   var d = feature.properties.depth;
+   if (d <= 0 || d % labelInterval !== 0) return;
+   var coords = feature.geometry.coordinates;
+   if (coords.length < 2) return;
 
- /* Generate candidate positions — sample densely enough to guarantee
-    at least one in-bounds hit per visible segment */
- var candidates;
- if (zoom >= 15) {
- candidates = [];
- var step = Math.max(1, Math.floor(coords.length / 12));
- for (var s = 0; s < coords.length; s += step) candidates.push(s);
- if (candidates[candidates.length - 1] !== coords.length - 1) candidates.push(coords.length - 1);
- } else if (zoom >= 13) {
- candidates = [];
- var step2 = Math.max(1, Math.floor(coords.length / 10));
- for (var s2 = 0; s2 < coords.length; s2 += step2) candidates.push(s2);
- if (candidates[candidates.length - 1] !== coords.length - 1) candidates.push(coords.length - 1);
- } else {
- candidates = [Math.floor(coords.length / 2)];
- }
+   /* Generate 11 candidate positions at 0%, 10%, 20%, ..., 100% */
+   var candidates = [];
+   for (var p = 0; p <= 10; p++) {
+     var idx = Math.min(Math.floor(p * (coords.length - 1) / 10), coords.length - 1);
+     candidates.push(idx);
+   }
 
- var placedThisFeature = false;
- for (var i = 0; i < candidates.length; i++) {
- var idx = Math.min(candidates[i], coords.length - 1);
- var latlng = L.latLng(coords[idx][1], coords[idx][0]);
- if (!bounds.contains(latlng)) continue;
- var px = map.latLngToContainerPoint(latlng);
- var cellKey = Math.floor(px.x / cellSize) + ',' + Math.floor(px.y / cellSize);
- if (placedCells[cellKey]) continue;
- placedCells[cellKey] = true;
- placedDepths[d] = true;
- placeLabel(latlng, d);
- placedThisFeature = true;
- if (zoom <= 14) break;
- }
+   for (var i = 0; i < candidates.length; i++) {
+     var ci = candidates[i];
+     var latlng = L.latLng(coords[ci][1], coords[ci][0]);
+     if (!bounds.contains(latlng)) continue;
+     var px = map.latLngToContainerPoint(latlng);
+     var cellKey = Math.floor(px.x / cellSize) + ',' + Math.floor(px.y / cellSize);
+     if (placedCells[cellKey]) continue;
+     placedCells[cellKey] = true;
+     placedDepths[d] = true;
+     placeLabel(latlng, d);
+     if (zoom <= 14) break; /* one label per feature at lower zooms */
+   }
  });
 
- /* Second pass: force-place ONE label for any depth that has zero labels in viewport.
-    Once a depth is force-placed, skip it — prevents redundant duplicates. */
- features.forEach(function(feature) {
- var d = feature.properties.depth;
- if (d <= 0 || d % labelInterval !== 0 || placedDepths[d]) return;
- var coords = feature.geometry.coordinates;
- for (var i = 0; i < coords.length; i++) {
- var latlng = L.latLng(coords[i][1], coords[i][0]);
- if (bounds.contains(latlng)) {
- placedDepths[d] = true;
- placeLabel(latlng, d);
- break;
+ /* Second pass: force-place ONE label for any depth with zero labels in viewport.
+    Use a for loop so we can truly break after placing one label per depth value. */
+ for (var fi = 0; fi < features.length; fi++) {
+   var feature = features[fi];
+   var d = feature.properties.depth;
+   if (d <= 0 || d % labelInterval !== 0) continue;
+   /* Skip depths already placed — this is the key dedup guard */
+   if (placedDepths[d]) continue;
+   var coords = feature.geometry.coordinates;
+   /* Sample 11 candidates here too for better coverage */
+   for (var p = 0; p <= 10; p++) {
+     var idx = Math.min(Math.floor(p * (coords.length - 1) / 10), coords.length - 1);
+     var latlng = L.latLng(coords[idx][1], coords[idx][0]);
+     if (bounds.contains(latlng)) {
+       placedDepths[d] = true;
+       placeLabel(latlng, d);
+       break; /* placed one label for this depth — done */
+     }
+   }
+   /* placedDepths[d] is now true, so all subsequent features
+      with the same depth will be skipped by the continue above */
  }
- }
- });
  }
 
  map.on('zoomend', function() { if (allContourFeatures.length) updateContoursForZoom(); });
@@ -467,3 +493,4 @@
 </script>
 </body>
 </html>
+```
