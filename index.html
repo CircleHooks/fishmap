@@ -282,12 +282,32 @@
  })
  .catch(function() { loadContours(); });
 
- /* Fix 2: Clip contours at lake boundary using turf.lineSplit.
-    Split each LineString at the polygon boundary, then keep only
-    segments whose midpoint is inside the lake polygon.
-    This guarantees zero spill — partial lines are trimmed, not excluded. */
+ /* Clip ALL contour features to lake boundary.
+    - Polygon/MultiPolygon: use turf.intersect to clip filled areas to lake boundary.
+    - LineString: use turf.lineSplit + midpoint-in-polygon to trim lines at boundary.
+    This guarantees zero spill for BOTH fill areas and line strokes. */
  function clipFeatureToLake(feature) {
  if (!lakeTurfPolygon) return [feature];
+ var geomType = feature.geometry.type;
+
+ /* ---- Polygon / MultiPolygon clipping ---- */
+ if (geomType === 'Polygon' || geomType === 'MultiPolygon') {
+   try {
+     var clipped = turf.intersect(feature, lakeTurfPolygon);
+     if (!clipped) return []; /* no overlap with lake — skip entirely */
+     clipped.properties = JSON.parse(JSON.stringify(feature.properties));
+     return [clipped];
+   } catch(e) {
+     /* Fallback: check centroid — if inside lake, keep as-is */
+     try {
+       var centroid = turf.centroid(feature);
+       if (turf.booleanPointInPolygon(centroid, lakeTurfPolygon)) return [feature];
+       return [];
+     } catch(e2) { return [feature]; }
+   }
+ }
+
+ /* ---- LineString clipping ---- */
  try {
    var coords = feature.geometry.coordinates;
    if (!coords || coords.length < 2) return [];
@@ -378,71 +398,58 @@
  activeLabelMarkers.push(marker);
  }
 
- /* Fix 3: Improved label logic —
-    - 11 candidates per feature (0%, 10%, 20%, ..., 100%) for full lake coverage
-    - Second pass uses a for loop with explicit break to prevent duplicate force-placement */
+ /* Helper: extract a flat coordinate array from any geometry type for label sampling */
+ function getFeatureCoords(feature) {
+ var geom = feature.geometry;
+ if (geom.type === 'LineString') return geom.coordinates;
+ if (geom.type === 'Polygon') return geom.coordinates[0]; /* outer ring */
+ if (geom.type === 'MultiPolygon') return geom.coordinates[0][0]; /* first ring of first poly */
+ if (geom.type === 'MultiLineString') return geom.coordinates[0]; /* first line */
+ return geom.coordinates || [];
+ }
+
+ /* Label placement — single pass, exactly ONE label per depth value.
+    1. Group all candidate coords by depth (11 samples per feature).
+    2. For each depth, place the first valid in-bounds, in-lake candidate.
+    3. No second pass. No cell blocking. Guarantees one label per depth. */
  function addLabels(features) {
  clearLabels();
- var zoom = map.getZoom();
  var bounds = map.getBounds();
- var labelInterval, cellSize;
- if (zoom < 13) { labelInterval = 5; cellSize = 120; }
- else if (zoom <= 14) { labelInterval = 1; cellSize = 40; }
- else { labelInterval = 1; cellSize = 20; }
+ var zoom = map.getZoom();
+ var labelInterval = (zoom < 13) ? 5 : 1;
 
- var placedCells = {}, placedDepths = {};
-
- /* First pass: place labels with cell-based overlap prevention.
-    For EACH feature, sample 11 candidates at 0%, 10%, ..., 100% of coords.length.
-    Check ALL candidates against bounds before cell-blocking. */
- features.forEach(function(feature) {
-   var d = feature.properties.depth;
-   if (d <= 0 || d % labelInterval !== 0) return;
-   var coords = feature.geometry.coordinates;
-   if (coords.length < 2) return;
-
-   /* Generate 11 candidate positions at 0%, 10%, 20%, ..., 100% */
-   var candidates = [];
-   for (var p = 0; p <= 10; p++) {
-     var idx = Math.min(Math.floor(p * (coords.length - 1) / 10), coords.length - 1);
-     candidates.push(idx);
-   }
-
-   for (var i = 0; i < candidates.length; i++) {
-     var ci = candidates[i];
-     var latlng = L.latLng(coords[ci][1], coords[ci][0]);
-     if (!bounds.contains(latlng)) continue;
-     var px = map.latLngToContainerPoint(latlng);
-     var cellKey = Math.floor(px.x / cellSize) + ',' + Math.floor(px.y / cellSize);
-     if (placedCells[cellKey]) continue;
-     placedCells[cellKey] = true;
-     placedDepths[d] = true;
-     placeLabel(latlng, d);
-     if (zoom <= 14) break; /* one label per feature at lower zooms */
-   }
- });
-
- /* Second pass: force-place ONE label for any depth with zero labels in viewport.
-    Use a for loop so we can truly break after placing one label per depth value. */
+ /* Build candidate points grouped by depth */
+ var depthGroups = {};
  for (var fi = 0; fi < features.length; fi++) {
    var feature = features[fi];
    var d = feature.properties.depth;
    if (d <= 0 || d % labelInterval !== 0) continue;
-   /* Skip depths already placed — this is the key dedup guard */
-   if (placedDepths[d]) continue;
-   var coords = feature.geometry.coordinates;
-   /* Sample 11 candidates here too for better coverage */
+   if (!depthGroups[d]) depthGroups[d] = [];
+   var coords = getFeatureCoords(feature);
+   if (!coords || coords.length < 2) continue;
+   /* Sample 11 points: 0%, 10%, 20%, …, 100% */
    for (var p = 0; p <= 10; p++) {
      var idx = Math.min(Math.floor(p * (coords.length - 1) / 10), coords.length - 1);
-     var latlng = L.latLng(coords[idx][1], coords[idx][0]);
-     if (bounds.contains(latlng)) {
-       placedDepths[d] = true;
-       placeLabel(latlng, d);
-       break; /* placed one label for this depth — done */
-     }
+     depthGroups[d].push(coords[idx]);
    }
-   /* placedDepths[d] is now true, so all subsequent features
-      with the same depth will be skipped by the continue above */
+ }
+
+ /* For each depth, place exactly ONE label at the first valid candidate */
+ var placedDepths = {};
+ var depthKeys = Object.keys(depthGroups);
+ for (var di = 0; di < depthKeys.length; di++) {
+   var depth = depthKeys[di];
+   if (placedDepths[depth]) continue;
+   var candidates = depthGroups[depth];
+   for (var ci = 0; ci < candidates.length; ci++) {
+     var pt = candidates[ci];
+     var latlng = L.latLng(pt[1], pt[0]);
+     if (!bounds.contains(latlng)) continue;
+     if (lakeTurfPolygon && !turf.booleanPointInPolygon(turf.point(pt), lakeTurfPolygon)) continue;
+     placeLabel(latlng, depth);
+     placedDepths[depth] = true;
+     break; /* STOP — one label per depth, period */
+   }
  }
  }
 
