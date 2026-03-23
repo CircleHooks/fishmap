@@ -9,214 +9,214 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
 <style>
-  /* ===== RESET & BASE ===== */
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+ /* ===== RESET & BASE ===== */
+ *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-  :root {
-    --bg: #1a1a2e;
-    --header: #16213e;
-    --accent: #e94560;
-    --text: #eeeeee;
-    --text-dim: #aaaabb;
-  }
+ :root {
+ --bg: #1a1a2e;
+ --header: #16213e;
+ --accent: #e94560;
+ --text: #eeeeee;
+ --text-dim: #aaaabb;
+ }
 
-  html, body {
-    height: 100%;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    overflow: hidden;
-    -webkit-tap-highlight-color: transparent;
-  }
+ html, body {
+ height: 100%;
+ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+ background: var(--bg);
+ color: var(--text);
+ overflow: hidden;
+ -webkit-tap-highlight-color: transparent;
+ }
 
-  body {
-    display: flex;
-    flex-direction: column;
-    height: 100dvh;
-  }
+ body {
+ display: flex;
+ flex-direction: column;
+ height: 100dvh;
+ }
 
-  /* ===== HEADER ===== */
-  #header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: var(--header);
-    padding: 10px 14px;
-    flex-shrink: 0;
-    z-index: 1000;
-    border-bottom: 1px solid #0f3460;
-  }
+ /* ===== HEADER ===== */
+ #header {
+ display: flex;
+ align-items: center;
+ justify-content: space-between;
+ background: var(--header);
+ padding: 10px 14px;
+ flex-shrink: 0;
+ z-index: 1000;
+ border-bottom: 1px solid #0f3460;
+ }
 
-  #header .title {
-    font-size: 18px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-  }
+ #header .title {
+ font-size: 18px;
+ font-weight: 700;
+ letter-spacing: 0.5px;
+ }
 
-  #gps-status {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    color: var(--text-dim);
-  }
+ #gps-status {
+ display: flex;
+ align-items: center;
+ gap: 6px;
+ font-size: 12px;
+ color: var(--text-dim);
+ }
 
-  .gps-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    display: inline-block;
-    flex-shrink: 0;
-    background: #555;
-    transition: background 0.3s;
-  }
+ .gps-dot {
+ width: 10px;
+ height: 10px;
+ border-radius: 50%;
+ display: inline-block;
+ flex-shrink: 0;
+ background: #555;
+ transition: background 0.3s;
+ }
 
-  .gps-dot.searching {
-    background: #ffaa00;
-    animation: pulse 1s ease-in-out infinite;
-  }
+ .gps-dot.searching {
+ background: #ffaa00;
+ animation: pulse 1s ease-in-out infinite;
+ }
 
-  .gps-dot.active {
-    background: #00ff88;
-    animation: none;
-  }
+ .gps-dot.active {
+ background: #00ff88;
+ animation: none;
+ }
 
-  @keyframes pulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.3; transform: scale(0.75); }
-  }
+ @keyframes pulse {
+ 0%, 100% { opacity: 1; transform: scale(1); }
+ 50% { opacity: 0.3; transform: scale(0.75); }
+ }
 
-  /* ===== MAP ===== */
-  #map {
-    flex: 1;
-    z-index: 1;
-    background: #8DB87A; /* iBoating-style green land */
-  }
+ /* ===== MAP ===== */
+ #map {
+ flex: 1;
+ z-index: 1;
+ background: #8DB87A; /* iBoating-style green land */
+ }
 
-  /* No hue-rotate filter — land color comes from map background + lake polygon overlay */
+ /* No hue-rotate filter — land color comes from map background + lake polygon overlay */
 
-  /* ===== BOTTOM BAR ===== */
-  #bottom-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: var(--header);
-    padding: 10px 12px;
-    flex-shrink: 0;
-    z-index: 1000;
-    gap: 8px;
-    border-top: 1px solid #0f3460;
-  }
+ /* ===== BOTTOM BAR ===== */
+ #bottom-bar {
+ display: flex;
+ align-items: center;
+ justify-content: space-between;
+ background: var(--header);
+ padding: 10px 12px;
+ flex-shrink: 0;
+ z-index: 1000;
+ gap: 8px;
+ border-top: 1px solid #0f3460;
+ }
 
-  #bottom-bar button {
-    border: none;
-    border-radius: 10px;
-    padding: 10px 16px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    white-space: nowrap;
-    flex-shrink: 0;
-    transition: background 0.2s, transform 0.1s;
-  }
+ #bottom-bar button {
+ border: none;
+ border-radius: 10px;
+ padding: 10px 16px;
+ font-size: 14px;
+ font-weight: 600;
+ cursor: pointer;
+ white-space: nowrap;
+ flex-shrink: 0;
+ transition: background 0.2s, transform 0.1s;
+ }
 
-  #bottom-bar button:active { transform: scale(0.95); }
+ #bottom-bar button:active { transform: scale(0.95); }
 
-  #btn-me {
-    background: #0f3460;
-    color: var(--text);
-  }
+ #btn-me {
+ background: #0f3460;
+ color: var(--text);
+ }
 
-  #btn-me:active { background: #1a4a7a; }
+ #btn-me:active { background: #1a4a7a; }
 
-  #coord-display {
-    flex: 1;
-    text-align: center;
-    font-size: 12px;
-    color: #7ecef4;
-    font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 0;
-    line-height: 1.3;
-  }
+ #coord-display {
+ flex: 1;
+ text-align: center;
+ font-size: 12px;
+ color: #7ecef4;
+ font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+ overflow: hidden;
+ text-overflow: ellipsis;
+ white-space: nowrap;
+ min-width: 0;
+ line-height: 1.3;
+ }
 
-  #coord-display .sublabel {
-    display: block;
-    font-size: 10px;
-    color: #888;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  }
+ #coord-display .sublabel {
+ display: block;
+ font-size: 10px;
+ color: #888;
+ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+ }
 
-  #btn-log {
-    background: var(--accent);
-    color: #fff;
-    font-size: 15px;
-    padding: 11px 20px;
-  }
+ #btn-log {
+ background: var(--accent);
+ color: #fff;
+ font-size: 15px;
+ padding: 11px 20px;
+ }
 
-  #btn-log:active { background: #c73652; }
+ #btn-log:active { background: #c73652; }
 
-  #btn-log.logged {
-    background: #2ecc71;
-  }
+ #btn-log.logged {
+ background: #2ecc71;
+ }
 
-  /* ===== OPACITY SLIDER ===== */
-  #slider-container {
-    position: fixed;
-    bottom: 72px;
-    right: 10px;
-    z-index: 1000;
-    background: rgba(22, 33, 62, 0.94);
-    border-radius: 10px;
-    padding: 10px 12px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-  }
+ /* ===== OPACITY SLIDER ===== */
+ #slider-container {
+ position: fixed;
+ bottom: 72px;
+ right: 10px;
+ z-index: 1000;
+ background: rgba(22, 33, 62, 0.94);
+ border-radius: 10px;
+ padding: 10px 12px;
+ display: flex;
+ flex-direction: column;
+ align-items: center;
+ gap: 4px;
+ }
 
-  #slider-container label {
-    font-size: 10px;
-    color: var(--text-dim);
-    letter-spacing: 0.3px;
-  }
+ #slider-container label {
+ font-size: 10px;
+ color: var(--text-dim);
+ letter-spacing: 0.3px;
+ }
 
-  #opacity-slider {
-    width: 110px;
-    accent-color: var(--accent);
-    cursor: pointer;
-  }
+ #opacity-slider {
+ width: 110px;
+ accent-color: var(--accent);
+ cursor: pointer;
+ }
 
-  /* ===== LEAFLET OVERRIDES ===== */
-  .leaflet-control-attribution { font-size: 8px !important; }
+ /* ===== LEAFLET OVERRIDES ===== */
+ .leaflet-control-attribution { font-size: 8px !important; }
 
-  /* Hide default OSM tile layer so only green background + lake polygon show */
-  .leaflet-tile-pane .leaflet-layer:first-child {
-    opacity: 0 !important;
-  }
+ /* Hide default OSM tile layer so only green background + lake polygon show */
+ .leaflet-tile-pane .leaflet-layer:first-child {
+ opacity: 0 !important;
+ }
 
-  /* ===== GPS BLUE DOT MARKER ===== */
-  .blue-dot {
-    width: 16px;
-    height: 16px;
-    background: #007AFF;
-    border: 3px solid white;
-    border-radius: 50%;
-    box-shadow: 0 0 8px rgba(0, 122, 255, 0.8);
-  }
+ /* ===== GPS BLUE DOT MARKER ===== */
+ .blue-dot {
+ width: 16px;
+ height: 16px;
+ background: #007AFF;
+ border: 3px solid white;
+ border-radius: 50%;
+ box-shadow: 0 0 8px rgba(0, 122, 255, 0.8);
+ }
 </style>
 </head>
 <body>
 
 <!-- ===== HEADER ===== -->
 <div id="header">
-  <span class="title">🎣 FishMap</span>
-  <div id="gps-status">
-    <span class="gps-dot searching" id="gps-dot"></span>
-    <span id="gps-label">Searching…</span>
-  </div>
+ <span class="title">🎣 FishMap</span>
+ <div id="gps-status">
+ <span class="gps-dot searching" id="gps-dot"></span>
+ <span id="gps-label">Searching…</span>
+ </div>
 </div>
 
 <!-- ===== MAP ===== -->
@@ -224,15 +224,15 @@
 
 <!-- ===== OPACITY SLIDER ===== -->
 <div id="slider-container">
-  <label for="opacity-slider">Contour opacity</label>
-  <input type="range" id="opacity-slider" min="0" max="100" value="80">
+ <label for="opacity-slider">Contour opacity</label>
+ <input type="range" id="opacity-slider" min="0" max="100" value="80">
 </div>
 
 <!-- ===== BOTTOM BAR ===== -->
 <div id="bottom-bar">
-  <button id="btn-me">📍 Me</button>
-  <div id="coord-display">—<span class="sublabel">tap map</span></div>
-  <button id="btn-log">🐟 Log Catch</button>
+ <button id="btn-me">📍 Me</button>
+ <div id="coord-display">—<span class="sublabel">tap map</span></div>
+ <button id="btn-log">🐟 Log Catch</button>
 </div>
 
 <!-- Leaflet v1.9.4 -->
@@ -242,469 +242,343 @@
 
 <script>
 (function () {
-  'use strict';
-
-  /* ===== CONFIG ===== */
-  /* Verified GPS data — do not change */
-  var LAKE_CENTER  = [41.745230, -88.862420];
-  var DEFAULT_ZOOM = 14;
-  var STORAGE_KEY  = 'fishmap_catches';
-
-  /* ===== MAP SETUP ===== */
-  var map = L.map('map', {
-    center: LAKE_CENTER,
-    zoom: DEFAULT_ZOOM,
-    zoomControl: true
-  });
-
-  // Custom panes to enforce z-order regardless of async load timing
-  map.createPane('lakePane');
-  map.getPane('lakePane').style.zIndex = 300;
-
-  map.createPane('contourPane');
-  map.getPane('contourPane').style.zIndex = 400;
-
-  var depthLabelPane = map.createPane('labelPane');
-  map.getPane('labelPane').style.zIndex = 500;
-
-  // Base layer — OSM tiles (hidden via CSS; land color comes from #map background)
-  var baseLayer = L.tileLayer(
-    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }
-  ).addTo(map);
-
-  /* ===== GEOJSON CONTOUR LAYER ===== */
-  // iBoating style: all contour lines are the same gray, 1px, no shadow
-  function getContourStyle() {
-    return {
-      color: '#5A5A5A',
-      weight: 1,
-      opacity: 1.0,
-      fillOpacity: 0
-    };
-  }
-
-  var geoJsonLayer = null;
-  var shadowLayer = null;
-
-  // Store lake polygon for Turf clipping
-  var lakeTurfPolygon = null;
-
-  /* ===== LAKE FILL POLYGON ===== */
-  // Load Shabbona Lake boundary from local GeoJSON and fill with iBoating water color,
-  // then store as Turf polygon for clipping, then load contours
-  fetch('data/shabbona-boundary.geojson')
-    .then(function(res) { return res.json(); })
-    .then(function(geojson) {
-      var feature = geojson.features[0];
-      if (!feature) { loadContours(); return; }
-
-      // Draw solid lake fill — iBoating water color #7FB5D5
-      var latlngs = feature.geometry.coordinates[0].map(function(c) {
-        return [c[1], c[0]];
-      });
-      L.polygon(latlngs, {
-        color: 'none',
-        fillColor: '#7FB5D5',
-        fillOpacity: 1.0,
-        interactive: false,
-        pane: 'lakePane'
-      }).addTo(map);
-
-      // Store as Turf polygon for contour clipping
-      lakeTurfPolygon = turf.polygon([feature.geometry.coordinates[0]]);
-
-      loadContours();
-    })
-    .catch(function() {
-      // If boundary fails, still load contours unclipped
-      loadContours();
-    });
-
-  /* ===== POINT-IN-POLYGON HELPER ===== */
-  // Returns true only if ALL checked points (both endpoints + midpoint) are inside the lake
-  function isSegmentInsideLake(coords) {
-    if (!lakeTurfPolygon) return true;
-    try {
-      // Check first point
-      var first = coords[0];
-      if (!turf.booleanPointInPolygon(turf.point(first), lakeTurfPolygon)) return false;
-
-      // Check last point
-      var last = coords[coords.length - 1];
-      if (!turf.booleanPointInPolygon(turf.point(last), lakeTurfPolygon)) return false;
-
-      // Check midpoint
-      var mid = coords[Math.floor(coords.length / 2)];
-      if (!turf.booleanPointInPolygon(turf.point(mid), lakeTurfPolygon)) return false;
-
-      // Check quarter points for extra safety
-      var q1 = coords[Math.floor(coords.length / 4)];
-      if (!turf.booleanPointInPolygon(turf.point(q1), lakeTurfPolygon)) return false;
-
-      var q3 = coords[Math.floor(coords.length * 3 / 4)];
-      if (!turf.booleanPointInPolygon(turf.point(q3), lakeTurfPolygon)) return false;
-
-      return true;
-    } catch(e) {
-      return true; // keep on error
-    }
-  }
-
-  /* ===== LOAD & CLIP CONTOURS ===== */
-  function loadContours() {
-    fetch('data/shabbona-lake.geojson')
-      .then(function(res) { return res.json(); })
-      .then(function(data) {
-        // Filter out shoreline/boundary features (depth === 0)
-        data.features = data.features.filter(function(f) {
-          return f.properties.depth > 0;
-        });
-
-        // Strict clipping: check both endpoints, midpoint, AND quarter points
-        if (lakeTurfPolygon) {
-          data.features = data.features.filter(function(f) {
-            var coords = f.geometry.coordinates;
-            if (!coords || coords.length < 2) return false;
-            return isSegmentInsideLake(coords);
-          });
-        }
-
-        renderContours(data);
-      })
-      .catch(function(err) {
-        console.error('Failed to load GeoJSON:', err);
-      });
-  }
-
-  /* ===== RENDER CONTOURS ===== */
-  function renderContours(data) {
-    // Store all features before zoom filtering for label use
-    allContourFeatures = data.features;
-
-    // Single layer — iBoating style: uniform gray lines, no shadow, no major/minor
-    geoJsonLayer = L.geoJSON(data, {
-      pane: 'contourPane',
-      style: getContourStyle,
-      onEachFeature: function(feature, layer) {
-        var d = feature.properties.depth;
-        layer.bindPopup('Depth: ' + d + ' ft');
-      }
-    }).addTo(map);
-
-    // Trigger first label render
-    contourFeatures = data.features;
-    updateContoursForZoom();
-  }
-
-  /* ===== ZOOM-ADAPTIVE CONTOUR FILTERING ===== */
-  var allContourFeatures = [];
-  var contourFeatures = [];
-
-  function updateContoursForZoom() {
-    var zoom = map.getZoom();
-
-    // Filter features by zoom level
-    if (zoom < 13) {
-      // Show only major contours (every 5ft)
-      contourFeatures = allContourFeatures.filter(function(f) {
-        return f.properties.depth % 5 === 0;
-      });
-    } else {
-      // Zoom 13+: show all contours
-      contourFeatures = allContourFeatures;
-    }
-
-    // Update the displayed layer
-    if (geoJsonLayer) {
-      map.removeLayer(geoJsonLayer);
-    }
-    geoJsonLayer = L.geoJSON({ type: 'FeatureCollection', features: contourFeatures }, {
-      pane: 'contourPane',
-      style: getContourStyle,
-      onEachFeature: function(feature, layer) {
-        var d = feature.properties.depth;
-        layer.bindPopup('Depth: ' + d + ' ft');
-      }
-    }).addTo(map);
-
-    // Apply current opacity
-    var currentOpacity = document.getElementById('opacity-slider').value / 100;
-    geoJsonLayer.setStyle({ opacity: currentOpacity });
-
-    addLabels(contourFeatures);
-  }
-
-  /* ===== ZOOM-BASED DYNAMIC DEPTH LABELS ===== */
-  var activeLabelMarkers = [];
-
-  function clearLabels() {
-    activeLabelMarkers.forEach(function(m) { map.removeLayer(m); });
-    activeLabelMarkers = [];
-  }
-
-  function placeLabel(latlng, depth) {
-    var marker = L.marker(latlng, {
-      icon: L.divIcon({
-        className: '',
-        html: '<div style="color:#2B3D8F;font-size:12px;font-weight:400;font-family:sans-serif;white-space:nowrap;pointer-events:none;">' + depth + '</div>',
-        iconSize: [20, 14],
-        iconAnchor: [10, 7]
-      }),
-      pane: 'labelPane',
-      interactive: false
-    });
-    marker.addTo(map);
-    activeLabelMarkers.push(marker);
-  }
-
-  function addLabels(features) {
-    clearLabels();
-    var zoom = map.getZoom();
-    var bounds = map.getBounds();
-
-    // Zoom-adaptive label interval and density
-    var labelInterval, cellSize;
-    if (zoom < 13) {
-      // Zoomed out: only major contours (every 5ft), minimal labels
-      labelInterval = 5;
-      cellSize = 120;
-    } else if (zoom <= 14) {
-      // Mid zoom: all contours, moderate density
-      labelInterval = 1;
-      cellSize = 70;
-    } else {
-      // Zoom 15+: full density, one per segment
-      labelInterval = 1;
-      cellSize = 40;
-    }
-
-    var placedCells = {};
-    var placedDepths = {};
-
-    // First pass: place labels with overlap prevention
-    features.forEach(function(feature) {
-      var d = feature.properties.depth;
-      if (d <= 0 || d % labelInterval !== 0) return;
-
-      var coords = feature.geometry.coordinates;
-      if (coords.length < 2) return;
-
-      // At high zoom, try more candidate positions for denser labeling
-      var candidates;
-      if (zoom >= 15) {
-        candidates = [];
-        var step = Math.max(1, Math.floor(coords.length / 6));
-        for (var s = 0; s < coords.length; s += step) {
-          candidates.push(s);
-        }
-      } else {
-        candidates = [
-          Math.floor(coords.length / 2),
-          Math.floor(coords.length / 4),
-          Math.floor(coords.length * 3 / 4)
-        ];
-      }
-
-      for (var i = 0; i < candidates.length; i++) {
-        var idx = Math.min(candidates[i], coords.length - 1);
-        var pt = coords[idx];
-        var latlng = L.latLng(pt[1], pt[0]);
-        if (!bounds.contains(latlng)) continue;
-
-        var px = map.latLngToContainerPoint(latlng);
-        var cellKey = Math.floor(px.x / cellSize) + ',' + Math.floor(px.y / cellSize);
-        if (placedCells[cellKey]) continue;
-
-        placedCells[cellKey] = true;
-        placedDepths[d] = true;
-        placeLabel(latlng, d);
-
-        // At zoom 15+, don't break — allow multiple labels per feature
-        if (zoom < 15) break;
-      }
-    });
-
-    // Second pass: force-place any depth that got no label in viewport
-    features.forEach(function(feature) {
-      var d = feature.properties.depth;
-      if (d <= 0 || d % labelInterval !== 0) return;
-      if (placedDepths[d]) return;
-
-      var coords = feature.geometry.coordinates;
-      for (var i = 0; i < coords.length; i++) {
-        var latlng = L.latLng(coords[i][1], coords[i][0]);
-        if (bounds.contains(latlng)) {
-          placedDepths[d] = true;
-          placeLabel(latlng, d);
-          break;
-        }
-      }
-    });
-  }
-
-  // Re-label and re-filter on zoom and pan
-  map.on('zoomend', function() {
-    if (allContourFeatures.length) updateContoursForZoom();
-  });
-  map.on('moveend', function() {
-    if (contourFeatures.length) addLabels(contourFeatures);
-  });
-
-  // Opacity slider — controls GeoJSON layer opacity
-  document.getElementById('opacity-slider').addEventListener('input', function () {
-    if (geoJsonLayer) {
-      geoJsonLayer.setStyle({ opacity: this.value / 100 });
-    }
-  });
-
-  /* ===== GPS BLUE DOT ===== */
-  var blueDotIcon = L.divIcon({
-    className: '',
-    html: '<div class="blue-dot"></div>',
-    iconSize: [16, 16],
-    iconAnchor: [8, 8]
-  });
-
-  var userMarker     = null;
-  var accuracyCircle = null;
-  var userLatLng     = null;
-
-  var gpsDotEl = document.getElementById('gps-dot');
-  var gpsLabel = document.getElementById('gps-label');
-
-  function onGPSUpdate(pos) {
-    var lat = pos.coords.latitude;
-    var lng = pos.coords.longitude;
-    var acc = pos.coords.accuracy;
-    userLatLng = L.latLng(lat, lng);
-
-    // Update header status
-    gpsDotEl.className = 'gps-dot active';
-    gpsLabel.textContent = 'GPS \u00b1' + Math.round(acc) + 'm';
-
-    // Blue dot marker
-    if (userMarker) {
-      userMarker.setLatLng(userLatLng);
-    } else {
-      userMarker = L.marker(userLatLng, {
-        icon: blueDotIcon,
-        zIndexOffset: 1000
-      }).addTo(map);
-    }
-
-    // Accuracy circle
-    if (accuracyCircle) {
-      accuracyCircle.setLatLng(userLatLng);
-      accuracyCircle.setRadius(acc);
-    } else {
-      accuracyCircle = L.circle(userLatLng, {
-        radius: acc,
-        color: '#007AFF',
-        fillColor: '#007AFF',
-        fillOpacity: 0.1,
-        weight: 1,
-        opacity: 0.3
-      }).addTo(map);
-    }
-  }
-
-  function onGPSError() {
-    gpsDotEl.className = 'gps-dot';
-    gpsLabel.textContent = 'GPS unavailable';
-  }
-
-  if ('geolocation' in navigator) {
-    navigator.geolocation.watchPosition(onGPSUpdate, onGPSError, {
-      enableHighAccuracy: true,
-      maximumAge: 5000,
-      timeout: 15000
-    });
-  } else {
-    gpsLabel.textContent = 'No GPS';
-  }
-
-  /* ===== "ME" BUTTON ===== */
-  document.getElementById('btn-me').addEventListener('click', function () {
-    if (userLatLng) {
-      map.setView(userLatLng, Math.max(map.getZoom(), DEFAULT_ZOOM));
-    }
-  });
-
-  /* ===== MAP TAP — COORDINATE DISPLAY ===== */
-  var coordDisplay = document.getElementById('coord-display');
-
-  map.on('click', function (e) {
-    coordDisplay.innerHTML =
-      e.latlng.lat.toFixed(6) + ', ' + e.latlng.lng.toFixed(6) +
-      '<span class="sublabel">tap location</span>';
-  });
-
-  /* ===== CATCH LOGGER ===== */
-  function loadCatches() {
-    try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-    } catch (e) {
-      return [];
-    }
-  }
-
-  function saveCatches(arr) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
-  }
-
-  function addCatchMarker(entry) {
-    var catchIcon = L.divIcon({
-      className: '',
-      html: '<div style="font-size:22px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.7))">🐟</div>',
-      iconSize: [24, 24],
-      iconAnchor: [12, 12]
-    });
-
-    var ts = new Date(entry.timestamp);
-    var timeStr = ts.toLocaleDateString() + ' ' + ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    L.marker([entry.lat, entry.lng], { icon: catchIcon })
-      .bindPopup(
-        '<div style="font-size:13px;line-height:1.5;color:#222">' +
-        '<b>🐟 ' + timeStr + '</b><br>' +
-        entry.lat.toFixed(6) + ', ' + entry.lng.toFixed(6) +
-        '</div>'
-      )
-      .addTo(map);
-  }
-
-  // Restore saved catches on load
-  var catches = loadCatches();
-  catches.forEach(addCatchMarker);
-
-  // Log Catch button
-  var btnLog = document.getElementById('btn-log');
-
-  btnLog.addEventListener('click', function () {
-    if (!userLatLng) {
-      alert('Waiting for GPS fix');
-      return;
-    }
-
-    var entry = {
-      lat: userLatLng.lat,
-      lng: userLatLng.lng,
-      timestamp: Date.now()
-    };
-
-    catches.push(entry);
-    saveCatches(catches);
-    addCatchMarker(entry);
-
-    // Confirmation feedback
-    btnLog.textContent = '✅ Logged!';
-    btnLog.classList.add('logged');
-    setTimeout(function () {
-      btnLog.textContent = '🐟 Log Catch';
-      btnLog.classList.remove('logged');
-    }, 1500);
-  });
+ 'use strict';
+
+ /* ===== CONFIG ===== */
+ var LAKE_CENTER = [41.745230, -88.862420];
+ var DEFAULT_ZOOM = 14;
+ var STORAGE_KEY = 'fishmap_catches';
+
+ /* ===== MAP SETUP ===== */
+ var map = L.map('map', {
+ center: LAKE_CENTER,
+ zoom: DEFAULT_ZOOM,
+ zoomControl: true
+ });
+
+ map.createPane('lakePane');
+ map.getPane('lakePane').style.zIndex = 300;
+
+ map.createPane('contourPane');
+ map.getPane('contourPane').style.zIndex = 400;
+
+ var depthLabelPane = map.createPane('labelPane');
+ map.getPane('labelPane').style.zIndex = 500;
+
+ var baseLayer = L.tileLayer(
+ 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+ { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }
+ ).addTo(map);
+
+ /* ===== GEOJSON CONTOUR LAYER ===== */
+ function getContourStyle() {
+ return {
+ color: '#5A5A5A',
+ weight: 1,
+ opacity: 1.0,
+ fillOpacity: 0
+ };
+ }
+
+ var geoJsonLayer = null;
+ var lakeTurfPolygon = null;
+
+ /* ===== LAKE FILL POLYGON ===== */
+ fetch('data/shabbona-boundary.geojson')
+ .then(function(res) { return res.json(); })
+ .then(function(geojson) {
+ var feature = geojson.features[0];
+ if (!feature) { loadContours(); return; }
+
+ var latlngs = feature.geometry.coordinates[0].map(function(c) {
+ return [c[1], c[0]];
+ });
+ L.polygon(latlngs, {
+ color: 'none',
+ fillColor: '#7FB5D5',
+ fillOpacity: 1.0,
+ interactive: false,
+ pane: 'lakePane'
+ }).addTo(map);
+
+ lakeTurfPolygon = turf.polygon([feature.geometry.coordinates[0]]);
+ loadContours();
+ })
+ .catch(function() {
+ loadContours();
+ });
+
+ /* ===== POINT-IN-POLYGON HELPER ===== */
+ function isSegmentInsideLake(coords) {
+ if (!lakeTurfPolygon) return true;
+ try {
+ var first = coords[0];
+ if (!turf.booleanPointInPolygon(turf.point(first), lakeTurfPolygon)) return false;
+ var last = coords[coords.length - 1];
+ if (!turf.booleanPointInPolygon(turf.point(last), lakeTurfPolygon)) return false;
+ var mid = coords[Math.floor(coords.length / 2)];
+ if (!turf.booleanPointInPolygon(turf.point(mid), lakeTurfPolygon)) return false;
+ var q1 = coords[Math.floor(coords.length / 4)];
+ if (!turf.booleanPointInPolygon(turf.point(q1), lakeTurfPolygon)) return false;
+ var q3 = coords[Math.floor(coords.length * 3 / 4)];
+ if (!turf.booleanPointInPolygon(turf.point(q3), lakeTurfPolygon)) return false;
+ return true;
+ } catch(e) {
+ return true;
+ }
+ }
+
+ /* ===== LOAD & CLIP CONTOURS ===== */
+ function loadContours() {
+ fetch('data/shabbona-lake.geojson')
+ .then(function(res) { return res.json(); })
+ .then(function(data) {
+ data.features = data.features.filter(function(f) {
+ return f.properties.depth > 0;
+ });
+ if (lakeTurfPolygon) {
+ data.features = data.features.filter(function(f) {
+ var coords = f.geometry.coordinates;
+ if (!coords || coords.length < 2) return false;
+ return isSegmentInsideLake(coords);
+ });
+ }
+ renderContours(data);
+ })
+ .catch(function(err) {
+ console.error('Failed to load GeoJSON:', err);
+ });
+ }
+
+ /* ===== RENDER CONTOURS ===== */
+ var allContourFeatures = [];
+ var contourFeatures = [];
+
+ function renderContours(data) {
+ allContourFeatures = data.features;
+ geoJsonLayer = L.geoJSON(data, {
+ pane: 'contourPane',
+ style: getContourStyle,
+ onEachFeature: function(feature, layer) {
+ layer.bindPopup('Depth: ' + feature.properties.depth + ' ft');
+ }
+ }).addTo(map);
+ contourFeatures = data.features;
+ updateContoursForZoom();
+ }
+
+ /* ===== ZOOM-ADAPTIVE CONTOUR FILTERING ===== */
+ function updateContoursForZoom() {
+ var zoom = map.getZoom();
+ if (zoom < 13) {
+ contourFeatures = allContourFeatures.filter(function(f) {
+ return f.properties.depth % 5 === 0;
+ });
+ } else {
+ contourFeatures = allContourFeatures;
+ }
+ if (geoJsonLayer) map.removeLayer(geoJsonLayer);
+ geoJsonLayer = L.geoJSON({ type: 'FeatureCollection', features: contourFeatures }, {
+ pane: 'contourPane',
+ style: getContourStyle,
+ onEachFeature: function(feature, layer) {
+ layer.bindPopup('Depth: ' + feature.properties.depth + ' ft');
+ }
+ }).addTo(map);
+ var currentOpacity = document.getElementById('opacity-slider').value / 100;
+ geoJsonLayer.setStyle({ opacity: currentOpacity });
+ addLabels(contourFeatures);
+ }
+
+ /* ===== DEPTH LABELS ===== */
+ var activeLabelMarkers = [];
+
+ function clearLabels() {
+ activeLabelMarkers.forEach(function(m) { map.removeLayer(m); });
+ activeLabelMarkers = [];
+ }
+
+ function placeLabel(latlng, depth) {
+ var marker = L.marker(latlng, {
+ icon: L.divIcon({
+ className: '',
+ html: '<div style="color:#2B3D8F;font-size:12px;font-weight:400;font-family:sans-serif;white-space:nowrap;pointer-events:none;">' + depth + '</div>',
+ iconSize: [20, 14],
+ iconAnchor: [10, 7]
+ }),
+ pane: 'labelPane',
+ interactive: false
+ });
+ marker.addTo(map);
+ activeLabelMarkers.push(marker);
+ }
+
+ function addLabels(features) {
+ clearLabels();
+ var zoom = map.getZoom();
+ var bounds = map.getBounds();
+ var labelInterval, cellSize;
+ if (zoom < 13) {
+ labelInterval = 5; cellSize = 120;
+ } else if (zoom <= 14) {
+ labelInterval = 1; cellSize = 70;
+ } else {
+ labelInterval = 1; cellSize = 40;
+ }
+
+ var placedCells = {};
+ var placedDepths = {};
+
+ features.forEach(function(feature) {
+ var d = feature.properties.depth;
+ if (d <= 0 || d % labelInterval !== 0) return;
+ var coords = feature.geometry.coordinates;
+ if (coords.length < 2) return;
+
+ var candidates;
+ if (zoom >= 15) {
+ candidates = [];
+ var step = Math.max(1, Math.floor(coords.length / 6));
+ for (var s = 0; s < coords.length; s += step) candidates.push(s);
+ } else {
+ candidates = [
+ Math.floor(coords.length / 2),
+ Math.floor(coords.length / 4),
+ Math.floor(coords.length * 3 / 4)
+ ];
+ }
+
+ for (var i = 0; i < candidates.length; i++) {
+ var idx = Math.min(candidates[i], coords.length - 1);
+ var pt = coords[idx];
+ var latlng = L.latLng(pt[1], pt[0]);
+ if (!bounds.contains(latlng)) continue;
+ var px = map.latLngToContainerPoint(latlng);
+ var cellKey = Math.floor(px.x / cellSize) + ',' + Math.floor(px.y / cellSize);
+ if (placedCells[cellKey]) continue;
+ placedCells[cellKey] = true;
+ placedDepths[d] = true;
+ placeLabel(latlng, d);
+ if (zoom < 15) break;
+ }
+ });
+
+ // Force-place any depth with no label
+ features.forEach(function(feature) {
+ var d = feature.properties.depth;
+ if (d <= 0 || d % labelInterval !== 0 || placedDepths[d]) return;
+ var coords = feature.geometry.coordinates;
+ for (var i = 0; i < coords.length; i++) {
+ var latlng = L.latLng(coords[i][1], coords[i][0]);
+ if (bounds.contains(latlng)) {
+ placedDepths[d] = true;
+ placeLabel(latlng, d);
+ break;
+ }
+ }
+ });
+ }
+
+ map.on('zoomend', function() { if (allContourFeatures.length) updateContoursForZoom(); });
+ map.on('moveend', function() { if (contourFeatures.length) addLabels(contourFeatures); });
+
+ document.getElementById('opacity-slider').addEventListener('input', function () {
+ if (geoJsonLayer) geoJsonLayer.setStyle({ opacity: this.value / 100 });
+ });
+
+ /* ===== GPS BLUE DOT ===== */
+ var blueDotIcon = L.divIcon({
+ className: '',
+ html: '<div class="blue-dot"></div>',
+ iconSize: [16, 16],
+ iconAnchor: [8, 8]
+ });
+
+ var userMarker = null;
+ var accuracyCircle = null;
+ var userLatLng = null;
+ var gpsDotEl = document.getElementById('gps-dot');
+ var gpsLabel = document.getElementById('gps-label');
+
+ function onGPSUpdate(pos) {
+ var lat = pos.coords.latitude;
+ var lng = pos.coords.longitude;
+ var acc = pos.coords.accuracy;
+ userLatLng = L.latLng(lat, lng);
+ gpsDotEl.className = 'gps-dot active';
+ gpsLabel.textContent = 'GPS \u00b1' + Math.round(acc) + 'm';
+ if (userMarker) { userMarker.setLatLng(userLatLng); } else {
+ userMarker = L.marker(userLatLng, { icon: blueDotIcon, zIndexOffset: 1000 }).addTo(map);
+ }
+ if (accuracyCircle) {
+ accuracyCircle.setLatLng(userLatLng);
+ accuracyCircle.setRadius(acc);
+ } else {
+ accuracyCircle = L.circle(userLatLng, {
+ radius: acc, color: '#007AFF', fillColor: '#007AFF',
+ fillOpacity: 0.1, weight: 1, opacity: 0.3
+ }).addTo(map);
+ }
+ }
+
+ function onGPSError() {
+ gpsDotEl.className = 'gps-dot';
+ gpsLabel.textContent = 'GPS unavailable';
+ }
+
+ if ('geolocation' in navigator) {
+ navigator.geolocation.watchPosition(onGPSUpdate, onGPSError, {
+ enableHighAccuracy: true, maximumAge: 5000, timeout: 15000
+ });
+ } else { gpsLabel.textContent = 'No GPS'; }
+
+ document.getElementById('btn-me').addEventListener('click', function () {
+ if (userLatLng) map.setView(userLatLng, Math.max(map.getZoom(), DEFAULT_ZOOM));
+ });
+
+ var coordDisplay = document.getElementById('coord-display');
+ map.on('click', function (e) {
+ coordDisplay.innerHTML = e.latlng.lat.toFixed(6) + ', ' + e.latlng.lng.toFixed(6) +
+ '<span class="sublabel">tap location</span>';
+ });
+
+ /* ===== CATCH LOGGER ===== */
+ function loadCatches() {
+ try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+ catch (e) { return []; }
+ }
+ function saveCatches(arr) { localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); }
+ function addCatchMarker(entry) {
+ var catchIcon = L.divIcon({
+ className: '',
+ html: '<div style="font-size:22px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.7))">🐟</div>',
+ iconSize: [24, 24], iconAnchor: [12, 12]
+ });
+ var ts = new Date(entry.timestamp);
+ var timeStr = ts.toLocaleDateString() + ' ' + ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+ L.marker([entry.lat, entry.lng], { icon: catchIcon })
+ .bindPopup('<div style="font-size:13px;line-height:1.5;color:#222"><b>🐟 ' + timeStr + '</b><br>' +
+ entry.lat.toFixed(6) + ', ' + entry.lng.toFixed(6) + '</div>')
+ .addTo(map);
+ }
+
+ var catches = loadCatches();
+ catches.forEach(addCatchMarker);
+
+ var btnLog = document.getElementById('btn-log');
+ btnLog.addEventListener('click', function () {
+ if (!userLatLng) { alert('Waiting for GPS fix'); return; }
+ var entry = { lat: userLatLng.lat, lng: userLatLng.lng, timestamp: Date.now() };
+ catches.push(entry);
+ saveCatches(catches);
+ addCatchMarker(entry);
+ btnLog.textContent = '✅ Logged!';
+ btnLog.classList.add('logged');
+ setTimeout(function () {
+ btnLog.textContent = '🐟 Log Catch';
+ btnLog.classList.remove('logged');
+ }, 1500);
+ });
 
 })();
 </script>
