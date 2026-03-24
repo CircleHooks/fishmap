@@ -1,3 +1,21 @@
+# OUTBOX — Label Declutter Fix
+**Date:** 2026-03-23
+
+## Changes Made
+
+1. **`MIN_LABEL_DISTANCE` increased** from `0.003` to `0.006` (~600m) — prevents labels from crowding in the dense southern basin.
+2. **Zoom < 13 label filter changed** from multiples of 5 to multiples of **10** — only 10, 20, 30ft depths are labeled at overview zoom. All depths shown at zoom >= 13.
+3. **`isTooClose()` updated** to accept a `[lng, lat]` point array matching the spec signature, keeping the global `placedPositions` check intact.
+
+## Issues / Notes
+
+- The existing `placedPositions` array already correctly tracked all placed labels globally and reset at the start of each `addLabels()` call. The root cause of crowding was primarily the too-small distance threshold (0.003 → 0.006) combined with showing too many labels at overview zoom (multiples of 5 → 10).
+- No changes made to `data/shabbona-lake.geojson` or `data/shabbona-boundary.geojson`.
+
+---
+
+## Complete Updated `index.html`
+
 ```html
 <!DOCTYPE html>
 <html lang="en">
@@ -94,7 +112,7 @@
  background: #8DB87A;
  }
 
- /* Fix 1: HOT OSM tiles with hue-rotate — warm beige land becomes green, roads stay visible */
+ /* HOT OSM tiles with hue-rotate — warm beige land becomes green, roads stay visible */
  .leaflet-tile-pane {
  filter: hue-rotate(100deg) saturate(0.6) brightness(1.1);
  }
@@ -246,7 +264,7 @@
  var LAKE_CENTER = [41.745230, -88.862420];
  var DEFAULT_ZOOM = 14;
  var STORAGE_KEY = 'fishmap_catches';
- var MIN_LABEL_DISTANCE = 0.003; /* Fix 1: minimum 0.003 degrees (~300m) between any two labels */
+ var MIN_LABEL_DISTANCE = 0.006; /* minimum 0.006 degrees (~600m) between any two labels */
 
  var map = L.map('map', { center: LAKE_CENTER, zoom: DEFAULT_ZOOM, zoomControl: true });
 
@@ -264,7 +282,7 @@
  { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors | Tiles: HOT' }
  ).addTo(map);
 
- /* Fix 2: Zoom-dependent contour style.
+ /* Zoom-dependent contour style.
     zoom < 13  → opacity 0.3, fillOpacity 0.15 (lighter at low zoom)
     zoom >= 13 → opacity 0.8, fillOpacity 0.4  (full detail at high zoom) */
  function getContourStyle() {
@@ -390,7 +408,7 @@
  updateContoursForZoom();
  }
 
- /* Fix 2: opacity slider now scales the zoom-appropriate base opacity */
+ /* Opacity slider scales the zoom-appropriate base opacity */
  function updateContoursForZoom() {
  var zoom = map.getZoom();
  contourFeatures = zoom < 13 ? allContourFeatures.filter(function(f) { return f.properties.depth % 5 === 0; }) : allContourFeatures;
@@ -405,7 +423,7 @@
  var activeLabelMarkers = [];
  function clearLabels() { activeLabelMarkers.forEach(function(m) { map.removeLayer(m); }); activeLabelMarkers = []; }
 
- /* Fix 3: Updated label style — 11px, weight 600, color #1a2e5a, white text-shadow for legibility */
+ /* Label style — 11px, weight 600, color #1a2e5a, white text-shadow for legibility */
  function placeLabel(latlng, depth) {
  var marker = L.marker(latlng, { icon: L.divIcon({ className: '', html: '<div style="color:#1a2e5a;font-size:11px;font-weight:600;font-family:sans-serif;white-space:nowrap;pointer-events:none;text-shadow:0 1px 2px rgba(255,255,255,0.8);">' + depth + '</div>', iconSize: [20, 14], iconAnchor: [10, 7] }), pane: 'labelPane', interactive: false });
  marker.addTo(map);
@@ -422,17 +440,19 @@
  return geom.coordinates || [];
  }
 
- /* Label placement with cell-blocking grid (Fix 1).
-    Enforces minimum distance of MIN_LABEL_DISTANCE (0.003 degrees, ~300m) between any two labels.
+ /* Label placement with global distance enforcement.
+    MIN_LABEL_DISTANCE = 0.006 degrees (~600m) between any two labels.
     1. Group all candidate coords by depth (11 samples per feature).
     2. For each depth, place the first valid in-bounds, in-lake candidate
-       that is at least MIN_LABEL_DISTANCE away from all previously placed labels.
-    3. Guarantees at most one label per depth with no crowding. */
+       that is at least MIN_LABEL_DISTANCE away from ALL previously placed labels.
+    3. At zoom < 13: only label depths that are multiples of 10 (10, 20, 30ft).
+       At zoom >= 13: label all depths.
+    4. Guarantees at most one label per depth with no crowding. */
  function addLabels(features) {
  clearLabels();
  var bounds = map.getBounds();
  var zoom = map.getZoom();
- var labelInterval = (zoom < 13) ? 5 : 1;
+ var labelInterval = (zoom < 13) ? 10 : 1;
 
  /* Build candidate points grouped by depth */
  var depthGroups = {};
@@ -450,20 +470,20 @@
    }
  }
 
- /* Fix 1: Track all placed label positions for minimum-distance enforcement */
+ /* Global placed-positions array for minimum-distance enforcement across ALL depths */
  var placedPositions = []; /* array of [lng, lat] */
 
- function isTooClose(lng, lat) {
+ function isTooClose(pt) {
    for (var i = 0; i < placedPositions.length; i++) {
-     var dx = lng - placedPositions[i][0];
-     var dy = lat - placedPositions[i][1];
+     var dx = pt[0] - placedPositions[i][0];
+     var dy = pt[1] - placedPositions[i][1];
      if (Math.sqrt(dx * dx + dy * dy) < MIN_LABEL_DISTANCE) return true;
    }
    return false;
  }
 
  /* For each depth, place exactly ONE label at the first valid candidate
-    that respects the minimum distance from all other placed labels */
+    that respects the minimum distance from ALL other placed labels */
  var placedDepths = {};
  var depthKeys = Object.keys(depthGroups);
  for (var di = 0; di < depthKeys.length; di++) {
@@ -475,8 +495,8 @@
      var latlng = L.latLng(pt[1], pt[0]);
      if (!bounds.contains(latlng)) continue;
      if (lakeTurfPolygon && !turf.booleanPointInPolygon(turf.point(pt), lakeTurfPolygon)) continue;
-     /* Fix 1: Reject candidate if too close to any previously placed label */
-     if (isTooClose(pt[0], pt[1])) continue;
+     /* Reject candidate if too close to ANY previously placed label */
+     if (isTooClose(pt)) continue;
      placeLabel(latlng, depth);
      placedDepths[depth] = true;
      placedPositions.push([pt[0], pt[1]]);
@@ -487,7 +507,7 @@
 
  map.on('zoomend', function() { if (allContourFeatures.length) updateContoursForZoom(); });
  map.on('moveend', function() { if (contourFeatures.length) addLabels(contourFeatures); });
- /* Fix 2: Slider scales the zoom-appropriate base opacity */
+ /* Slider scales the zoom-appropriate base opacity */
  document.getElementById('opacity-slider').addEventListener('input', function () {
  if (geoJsonLayer) {
    var sliderVal = this.value / 100;
