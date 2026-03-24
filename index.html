@@ -303,7 +303,7 @@
 
  var activeLakeId = 'shabbona';
  var STORAGE_KEY = 'fishmap_catches';
- var MIN_LABEL_DISTANCE = 0.006; /* minimum 0.006 degrees (~600m) between any two labels */
+ var MIN_LABEL_DISTANCE = 0.002; /* minimum 0.002 degrees (~200m) between any two labels */
 
  var map = L.map('map', { center: LAKES.shabbona.center, zoom: LAKES.shabbona.zoom, zoomControl: true });
 
@@ -355,16 +355,43 @@
  new LakeSelectorControl().addTo(map);
 
  /* ===== CONTOUR & LAKE STATE ===== */
- /* Zoom-dependent contour style.
-    zoom < 13  → opacity 0.3, fillOpacity 0.15 (lighter at low zoom)
-    zoom >= 13 → opacity 0.8, fillOpacity 0.4  (full detail at high zoom) */
- function getContourStyle() {
- var zoom = map.getZoom();
- if (zoom < 13) {
-   return { color: '#5A5A5A', weight: 1, opacity: 0.3, fillOpacity: 0.15 };
- } else {
-   return { color: '#5A5A5A', weight: 1, opacity: 0.8, fillOpacity: 0.4 };
+ /* ===== DEPTH COLOR SCALE ===== */
+ /* Blue gradient: shallow = light blue, deep = dark navy */
+ var DEPTH_COLORS = {
+   2:    '#b8dff0',
+   4:    '#92cbea',
+   6:    '#6bb5e0',
+   8:    '#489cd4',
+   10:   '#2e7fbf',
+   12:   '#1e64a4',
+   14:   '#134a85',
+   15.5: '#0a3260'
+ };
+ var DEPTH_VALUES = [2, 4, 6, 8, 10, 12, 14, 15.5];
+
+ function getDepthColor(depth) {
+   if (DEPTH_COLORS[depth]) return DEPTH_COLORS[depth];
+   /* Interpolate for unexpected depths */
+   for (var i = 0; i < DEPTH_VALUES.length - 1; i++) {
+     if (depth >= DEPTH_VALUES[i] && depth <= DEPTH_VALUES[i + 1]) {
+       return DEPTH_COLORS[DEPTH_VALUES[i]];
+     }
+   }
+   return '#6bb5e0';
  }
+
+ /* Zoom-dependent contour style with depth-based coloring.
+    zoom < 13  → lighter appearance
+    zoom >= 13 → full detail */
+ function getContourStyle(feature) {
+   var zoom = map.getZoom();
+   var depth = feature && feature.properties ? feature.properties.depth : 0;
+   var fillColor = getDepthColor(depth);
+   if (zoom < 13) {
+     return { color: '#3a5a7a', weight: 1, opacity: 0.3, fillColor: fillColor, fillOpacity: 0.7 };
+   } else {
+     return { color: '#3a5a7a', weight: 1.2, opacity: 0.8, fillColor: fillColor, fillOpacity: 0.85 };
+   }
  }
 
  var geoJsonLayer = null;
@@ -524,8 +551,9 @@
  var contourFeatures = [];
 
  function renderContours(data) {
+ /* Sort so shallow contours render first (bottom), deeper on top */
+ data.features.sort(function(a, b) { return a.properties.depth - b.properties.depth; });
  allContourFeatures = data.features;
- geoJsonLayer = L.geoJSON(data, { pane: 'contourPane', style: getContourStyle, onEachFeature: function(feature, layer) { layer.bindPopup('Depth: ' + feature.properties.depth + ' ft'); } }).addTo(map);
  contourFeatures = data.features;
  updateContoursForZoom();
  }
@@ -535,19 +563,33 @@
  var zoom = map.getZoom();
  contourFeatures = zoom < 13 ? allContourFeatures.filter(function(f) { return f.properties.depth % 5 === 0; }) : allContourFeatures;
  if (geoJsonLayer) map.removeLayer(geoJsonLayer);
- geoJsonLayer = L.geoJSON({ type: 'FeatureCollection', features: contourFeatures }, { pane: 'contourPane', style: getContourStyle, onEachFeature: function(feature, layer) { layer.bindPopup('Depth: ' + feature.properties.depth + ' ft'); } }).addTo(map);
- var sliderVal = document.getElementById('opacity-slider').value / 100;
- var baseStyle = getContourStyle();
- geoJsonLayer.setStyle({ opacity: baseStyle.opacity * sliderVal, fillOpacity: baseStyle.fillOpacity * sliderVal });
+
+ /* Sort features so shallow (low depth) renders first (bottom), deep renders last (top) */
+ var sorted = contourFeatures.slice().sort(function(a, b) { return a.properties.depth - b.properties.depth; });
+
+ geoJsonLayer = L.geoJSON({ type: 'FeatureCollection', features: sorted }, { pane: 'contourPane', style: getContourStyle, onEachFeature: function(feature, layer) { layer.bindPopup('Depth: ' + feature.properties.depth + ' ft'); } }).addTo(map);
+ applySliderOpacity();
  addLabels(contourFeatures);
+ }
+
+ function applySliderOpacity() {
+ if (!geoJsonLayer) return;
+ var sliderVal = document.getElementById('opacity-slider').value / 100;
+ var zoom = map.getZoom();
+ geoJsonLayer.eachLayer(function(layer) {
+   var feature = layer.feature;
+   if (!feature) return;
+   var base = getContourStyle(feature);
+   layer.setStyle({ opacity: base.opacity * sliderVal, fillOpacity: base.fillOpacity * sliderVal });
+ });
  }
 
  var activeLabelMarkers = [];
  function clearLabels() { activeLabelMarkers.forEach(function(m) { map.removeLayer(m); }); activeLabelMarkers = []; }
 
- /* Label style — 11px, weight 600, color #1a2e5a, white text-shadow for legibility */
+ /* Label style — 11px, weight 700, white text with dark shadow for legibility on blue fills */
  function placeLabel(latlng, depth) {
- var marker = L.marker(latlng, { icon: L.divIcon({ className: '', html: '<div style="color:#1a2e5a;font-size:11px;font-weight:600;font-family:sans-serif;white-space:nowrap;pointer-events:none;text-shadow:0 1px 2px rgba(255,255,255,0.8);">' + depth + '</div>', iconSize: [20, 14], iconAnchor: [10, 7] }), pane: 'labelPane', interactive: false });
+ var marker = L.marker(latlng, { icon: L.divIcon({ className: '', html: '<div style="color:#ffffff;font-size:11px;font-weight:700;font-family:sans-serif;white-space:nowrap;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,0.7), 0 0 6px rgba(0,0,0,0.4);">' + depth + '</div>', iconSize: [20, 14], iconAnchor: [10, 7] }), pane: 'labelPane', interactive: false });
  marker.addTo(map);
  activeLabelMarkers.push(marker);
  }
@@ -632,11 +674,7 @@
  map.on('moveend', function() { if (contourFeatures.length) addLabels(contourFeatures); });
  /* Slider scales the zoom-appropriate base opacity */
  document.getElementById('opacity-slider').addEventListener('input', function () {
- if (geoJsonLayer) {
-   var sliderVal = this.value / 100;
-   var baseStyle = getContourStyle();
-   geoJsonLayer.setStyle({ opacity: baseStyle.opacity * sliderVal, fillOpacity: baseStyle.fillOpacity * sliderVal });
- }
+   applySliderOpacity();
  });
 
  /* ===== GPS BLUE DOT ===== */
