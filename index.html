@@ -1,3 +1,26 @@
+# OUTBOX — Add Lake Patterson to FishMap
+**Date:** 2026-03-23
+
+## Changes Made
+
+1. **Lake selector UI** — Two pill buttons ("Shabbona Lake" / "Lake Patterson") positioned top-left of the map, above the opacity slider. Active lake is dark blue (`#0f3460`), inactive is light gray (`#8899aa`). Buttons sit inside a Leaflet custom control so they respect the map's event handling.
+2. **Lake config object** — `LAKES` dictionary holds center, zoom, contour URL, boundary URL (null for Patterson), and `needsClipping` flag per lake.
+3. **`switchLake()` function** — Clears all existing contour layers, lake-fill polygon, and labels; resets state; fetches boundary (Shabbona) or skips straight to contours (Patterson). Centers map on the selected lake.
+4. **Patterson lake fill** — Uses the outermost contour (depth === 2) as the lake-fill polygon, since Patterson has no separate boundary file and the data is already clipped.
+5. **Title updates** — `<title>` element updates to reflect the active lake name.
+
+## Issues / Notes
+
+- No `.geojson` files were modified.
+- Patterson does not use boundary clipping (`needsClipping: false`). The `clipFeatureToLake()` path is only invoked for Shabbona.
+- GPS blue dot, catch logging, opacity slider, and coordinate display all continue to work across both lakes with no changes.
+- Initial load now goes through `switchLake('shabbona')` so the startup path is unified with the switching path. The inline boundary fetch that previously ran at the top level has been removed in favor of this.
+
+---
+
+## Complete Updated `index.html`
+
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -96,6 +119,42 @@
  /* HOT OSM tiles with hue-rotate — warm beige land becomes green, roads stay visible */
  .leaflet-tile-pane {
  filter: hue-rotate(100deg) saturate(0.6) brightness(1.1);
+ }
+
+ /* ===== LAKE SELECTOR ===== */
+ .lake-selector {
+ display: flex;
+ gap: 4px;
+ background: rgba(22, 33, 62, 0.94);
+ border-radius: 10px;
+ padding: 4px;
+ }
+
+ .lake-btn {
+ border: none;
+ border-radius: 8px;
+ padding: 6px 12px;
+ font-size: 12px;
+ font-weight: 600;
+ cursor: pointer;
+ white-space: nowrap;
+ transition: background 0.2s, color 0.2s;
+ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+ }
+
+ .lake-btn.active {
+ background: #0f3460;
+ color: #eeeeee;
+ }
+
+ .lake-btn.inactive {
+ background: transparent;
+ color: #8899aa;
+ }
+
+ .lake-btn.inactive:hover {
+ background: rgba(255,255,255,0.08);
+ color: #bbccdd;
  }
 
  /* ===== BOTTOM BAR ===== */
@@ -204,38 +263,6 @@
  border-radius: 50%;
  box-shadow: 0 0 8px rgba(0, 122, 255, 0.8);
  }
-
-/* ===== LAKE SWITCHER ===== */
-#lake-switcher {
-  position: fixed;
-  top: 60px;
-  left: 10px;
-  z-index: 1000;
-  display: flex;
-  gap: 6px;
-}
-
-#lake-switcher button {
-  border: none;
-  border-radius: 20px;
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s, color 0.2s;
-  white-space: nowrap;
-  background: #555;
-  color: #ccc;
-}
-
-#lake-switcher button.active {
-  background: #0f3460;
-  color: #fff;
-}
-
-#lake-switcher button:active {
-  transform: scale(0.95);
-}
 </style>
 </head>
 <body>
@@ -251,12 +278,6 @@
 
 <!-- ===== MAP ===== -->
 <div id="map"></div>
-
-<!-- ===== LAKE SWITCHER ===== -->
-<div id="lake-switcher">
-  <button id="btn-shabbona" class="active" onclick="switchLake('shabbona')">🏞 Shabbona</button>
-  <button id="btn-patterson" onclick="switchLake('patterson')">🎣 Patterson</button>
-</div>
 
 <!-- ===== OPACITY SLIDER ===== -->
 <div id="slider-container">
@@ -280,16 +301,34 @@
 (function () {
  'use strict';
 
- var LAKE_CENTER = [41.745230, -88.862420];
- var DEFAULT_ZOOM = 14;
+ /* ===== LAKE CONFIGURATIONS ===== */
+ var LAKES = {
+ shabbona: {
+   name: 'Shabbona Lake',
+   center: [41.745230, -88.862420],
+   zoom: 14,
+   contourUrl: 'data/shabbona-lake.geojson',
+   boundaryUrl: 'data/shabbona-boundary.geojson',
+   needsClipping: true,
+   lakeFillFromContour: false
+ },
+ patterson: {
+   name: 'Lake Patterson',
+   center: [41.7520, -88.2720],
+   zoom: 15,
+   contourUrl: 'data/lake-patterson.geojson',
+   boundaryUrl: null,
+   needsClipping: false,
+   lakeFillFromContour: true,    /* use outermost (2ft) contour as fill shape */
+   lakeFillDepth: 2
+ }
+ };
+
+ var activeLakeId = 'shabbona';
  var STORAGE_KEY = 'fishmap_catches';
  var MIN_LABEL_DISTANCE = 0.006; /* minimum 0.006 degrees (~600m) between any two labels */
 
- var map = L.map('map', { center: LAKE_CENTER, zoom: DEFAULT_ZOOM, zoomControl: true });
-
- /* ===== LAKE STATE ===== */
- var activeLake = 'shabbona';
- var lakeFillLayer = null;
+ var map = L.map('map', { center: LAKES.shabbona.center, zoom: LAKES.shabbona.zoom, zoomControl: true });
 
  map.createPane('lakePane');
  map.getPane('lakePane').style.zIndex = 300;
@@ -305,6 +344,40 @@
  { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors | Tiles: HOT' }
  ).addTo(map);
 
+ /* ===== LAKE SELECTOR CONTROL ===== */
+ var LakeSelectorControl = L.Control.extend({
+ options: { position: 'topleft' },
+ onAdd: function () {
+   var container = L.DomUtil.create('div', 'lake-selector');
+   L.DomEvent.disableClickPropagation(container);
+   L.DomEvent.disableScrollPropagation(container);
+
+   var btnShabbona = L.DomUtil.create('button', 'lake-btn active', container);
+   btnShabbona.textContent = 'Shabbona Lake';
+   btnShabbona.setAttribute('data-lake', 'shabbona');
+
+   var btnPatterson = L.DomUtil.create('button', 'lake-btn inactive', container);
+   btnPatterson.textContent = 'Lake Patterson';
+   btnPatterson.setAttribute('data-lake', 'patterson');
+
+   container.addEventListener('click', function (e) {
+     var btn = e.target.closest('.lake-btn');
+     if (!btn) return;
+     var lakeId = btn.getAttribute('data-lake');
+     if (lakeId === activeLakeId) return;
+     /* Update button states */
+     container.querySelectorAll('.lake-btn').forEach(function (b) {
+       b.className = 'lake-btn ' + (b.getAttribute('data-lake') === lakeId ? 'active' : 'inactive');
+     });
+     switchLake(lakeId);
+   });
+
+   return container;
+ }
+ });
+ new LakeSelectorControl().addTo(map);
+
+ /* ===== CONTOUR & LAKE STATE ===== */
  /* Zoom-dependent contour style.
     zoom < 13  → opacity 0.3, fillOpacity 0.15 (lighter at low zoom)
     zoom >= 13 → opacity 0.8, fillOpacity 0.4  (full detail at high zoom) */
@@ -318,64 +391,45 @@
  }
 
  var geoJsonLayer = null;
+ var lakeFillLayer = null;
  var lakeTurfPolygon = null;
 
- function loadShabbona() {
-   if (geoJsonLayer) { map.removeLayer(geoJsonLayer); geoJsonLayer = null; }
-   if (lakeFillLayer) { map.removeLayer(lakeFillLayer); lakeFillLayer = null; }
-   clearLabels();
-   allContourFeatures = []; contourFeatures = [];
-   lakeTurfPolygon = null;
-   map.setView([41.745230, -88.862420], 14);
-   fetch('data/shabbona-boundary.geojson')
-   .then(function(res) { return res.json(); })
-   .then(function(geojson) {
-     var feature = geojson.features[0];
-     if (!feature) { loadContours('data/shabbona-lake.geojson', true); return; }
-     var latlngs = feature.geometry.coordinates[0].map(function(c) { return [c[1], c[0]]; });
-     lakeFillLayer = L.polygon(latlngs, { color: 'none', fillColor: '#7FB5D5', fillOpacity: 1.0, interactive: false, pane: 'lakePane' });
-     lakeFillLayer.addTo(map);
-     lakeTurfPolygon = turf.polygon([feature.geometry.coordinates[0]]);
-     loadContours('data/shabbona-lake.geojson', true);
-   })
-   .catch(function() { loadContours('data/shabbona-lake.geojson', true); });
+ /* ===== SWITCH LAKE ===== */
+ function switchLake(lakeId) {
+ activeLakeId = lakeId;
+ var lake = LAKES[lakeId];
+
+ /* Update page title */
+ document.title = 'FishMap \u2014 ' + lake.name;
+
+ /* Clear existing layers */
+ clearLabels();
+ if (geoJsonLayer) { map.removeLayer(geoJsonLayer); geoJsonLayer = null; }
+ if (lakeFillLayer) { map.removeLayer(lakeFillLayer); lakeFillLayer = null; }
+ lakeTurfPolygon = null;
+ allContourFeatures = [];
+ contourFeatures = [];
+
+ /* Center map */
+ map.setView(lake.center, lake.zoom);
+
+ /* Load boundary (if exists) then contours */
+ if (lake.boundaryUrl) {
+   fetch(lake.boundaryUrl)
+     .then(function(res) { return res.json(); })
+     .then(function(geojson) {
+       var feature = geojson.features[0];
+       if (!feature) { loadContours(); return; }
+       var latlngs = feature.geometry.coordinates[0].map(function(c) { return [c[1], c[0]]; });
+       lakeFillLayer = L.polygon(latlngs, { color: 'none', fillColor: '#7FB5D5', fillOpacity: 1.0, interactive: false, pane: 'lakePane' }).addTo(map);
+       lakeTurfPolygon = turf.polygon([feature.geometry.coordinates[0]]);
+       loadContours();
+     })
+     .catch(function() { loadContours(); });
+ } else {
+   loadContours();
  }
-
- function loadPatterson() {
-   if (geoJsonLayer) { map.removeLayer(geoJsonLayer); geoJsonLayer = null; }
-   if (lakeFillLayer) { map.removeLayer(lakeFillLayer); lakeFillLayer = null; }
-   clearLabels();
-   allContourFeatures = []; contourFeatures = [];
-   lakeTurfPolygon = null;
-   map.setView([41.7520, -88.2720], 15);
-   fetch('data/lake-patterson.geojson')
-   .then(function(res) { return res.json(); })
-   .then(function(data) {
-     var outerFeature = null;
-     for (var i = 0; i < data.features.length; i++) {
-       if (data.features[i].properties.depth === 2) { outerFeature = data.features[i]; break; }
-     }
-     if (outerFeature) {
-       var fillCoords = outerFeature.geometry.coordinates[0];
-       var latlngs = fillCoords.map(function(c) { return [c[1], c[0]]; });
-       lakeFillLayer = L.polygon(latlngs, { color: 'none', fillColor: '#7FB5D5', fillOpacity: 1.0, interactive: false, pane: 'lakePane' });
-       lakeFillLayer.addTo(map);
-     }
-     data.features = data.features.filter(function(f) { return f.properties.depth > 0; });
-     renderContours(data);
-   })
-   .catch(function(err) { console.error('Failed to load Patterson GeoJSON:', err); });
  }
-
- window.switchLake = function(name) {
-   if (name === activeLake) return;
-   activeLake = name;
-   document.getElementById('btn-shabbona').classList.toggle('active', name === 'shabbona');
-   document.getElementById('btn-patterson').classList.toggle('active', name === 'patterson');
-   if (name === 'shabbona') { loadShabbona(); } else { loadPatterson(); }
- };
-
- loadShabbona();
 
  /* Clip ALL contour features to lake boundary.
     - Polygon/MultiPolygon: use turf.intersect to clip filled areas to lake boundary.
@@ -446,12 +500,35 @@
  }
  }
 
- function loadContours(path, clip) {
- fetch(path || 'data/shabbona-lake.geojson')
+ function loadContours() {
+ var lake = LAKES[activeLakeId];
+ fetch(lake.contourUrl)
  .then(function(res) { return res.json(); })
  .then(function(data) {
    data.features = data.features.filter(function(f) { return f.properties.depth > 0; });
-   if (clip && lakeTurfPolygon) {
+
+   /* For lakes that derive their fill from the outermost contour (e.g. Patterson) */
+   if (lake.lakeFillFromContour && !lakeFillLayer) {
+     var fillDepth = lake.lakeFillDepth || 2;
+     var fillFeature = null;
+     for (var i = 0; i < data.features.length; i++) {
+       var f = data.features[i];
+       if (f.properties.depth === fillDepth && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon')) {
+         fillFeature = f;
+         break;
+       }
+     }
+     if (fillFeature) {
+       lakeFillLayer = L.geoJSON(fillFeature, {
+         pane: 'lakePane',
+         style: { color: 'none', fillColor: '#7FB5D5', fillOpacity: 1.0 },
+         interactive: false
+       }).addTo(map);
+     }
+   }
+
+   /* Clip contours to boundary if needed (Shabbona) */
+   if (lake.needsClipping && lakeTurfPolygon) {
      var clippedFeatures = [];
      data.features.forEach(function(f) {
        var segments = clipFeatureToLake(f);
@@ -511,7 +588,7 @@
  /* Label placement with global distance enforcement.
     MIN_LABEL_DISTANCE = 0.006 degrees (~600m) between any two labels.
     1. Group all candidate coords by depth (11 samples per feature).
-    2. For each depth, place the first valid in-bounds, in-lake candidate
+    2. For each depth, place the first valid in-bounds candidate
        that is at least MIN_LABEL_DISTANCE away from ALL previously placed labels.
     3. At zoom < 13: only label depths that are multiples of 10 (10, 20, 30ft).
        At zoom >= 13: label all depths.
@@ -562,6 +639,7 @@
      var pt = candidates[ci];
      var latlng = L.latLng(pt[1], pt[0]);
      if (!bounds.contains(latlng)) continue;
+     /* Only check in-lake for lakes that have a boundary polygon (Shabbona) */
      if (lakeTurfPolygon && !turf.booleanPointInPolygon(turf.point(pt), lakeTurfPolygon)) continue;
      /* Reject candidate if too close to ANY previously placed label */
      if (isTooClose(pt)) continue;
@@ -584,6 +662,7 @@
  }
  });
 
+ /* ===== GPS BLUE DOT ===== */
  var blueDotIcon = L.divIcon({ className: '', html: '<div class="blue-dot"></div>', iconSize: [16,16], iconAnchor: [8,8] });
  var userMarker = null, accuracyCircle = null, userLatLng = null;
  var gpsDotEl = document.getElementById('gps-dot');
@@ -600,10 +679,11 @@
  function onGPSError() { gpsDotEl.className = 'gps-dot'; gpsLabel.textContent = 'GPS unavailable'; }
  if ('geolocation' in navigator) { navigator.geolocation.watchPosition(onGPSUpdate, onGPSError, { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }); } else { gpsLabel.textContent = 'No GPS'; }
 
- document.getElementById('btn-me').addEventListener('click', function () { if (userLatLng) map.setView(userLatLng, Math.max(map.getZoom(), DEFAULT_ZOOM)); });
+ document.getElementById('btn-me').addEventListener('click', function () { if (userLatLng) map.setView(userLatLng, Math.max(map.getZoom(), LAKES[activeLakeId].zoom)); });
  var coordDisplay = document.getElementById('coord-display');
  map.on('click', function (e) { coordDisplay.innerHTML = e.latlng.lat.toFixed(6) + ', ' + e.latlng.lng.toFixed(6) + '<span class="sublabel">tap location</span>'; });
 
+ /* ===== CATCH LOGGING ===== */
  function loadCatches() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch(e) { return []; } }
  function saveCatches(arr) { localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); }
  function addCatchMarker(entry) {
@@ -623,7 +703,12 @@
  btnLog.textContent = '✅ Logged!'; btnLog.classList.add('logged');
  setTimeout(function () { btnLog.textContent = '🐟 Log Catch'; btnLog.classList.remove('logged'); }, 1500);
  });
+
+ /* ===== INITIAL LOAD — Shabbona ===== */
+ switchLake('shabbona');
+
 })();
 </script>
 </body>
 </html>
+```
