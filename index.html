@@ -296,8 +296,8 @@
    contourUrl: 'data/lake-patterson.geojson',
    boundaryUrl: null,
    needsClipping: false,
-   lakeFillFromContour: true,    /* use outermost (2ft) contour as fill shape */
-   lakeFillDepth: 2
+   lakeFillFromContour: true,    /* use outermost (0.5ft) contour as fill shape */
+   lakeFillDepth: 0.5
  }
  };
 
@@ -358,16 +358,30 @@
  /* ===== DEPTH COLOR SCALE ===== */
  /* Blue gradient: shallow = light blue, deep = dark navy */
  var DEPTH_COLORS = {
+   0.5:  '#d4ecf7',
+   1:    '#c6e4f4',
    2:    '#b8dff0',
+   3:    '#a5d5ec',
    4:    '#92cbea',
+   5:    '#7fc0e5',
    6:    '#6bb5e0',
+   7:    '#58a8d8',
    8:    '#489cd4',
+   9.5:  '#3b8cc9',
    10:   '#2e7fbf',
-   12:   '#1e64a4',
-   14:   '#134a85',
+   10.5: '#2872b2',
+   11:   '#2368aa',
+   11.5: '#1e64a4',
+   12:   '#1a5a9a',
+   12.5: '#175290',
+   13:   '#154d88',
+   13.5: '#134a85',
+   14:   '#10407a',
+   14.5: '#0d3970',
+   15:   '#0b3468',
    15.5: '#0a3260'
  };
- var DEPTH_VALUES = [2, 4, 6, 8, 10, 12, 14, 15.5];
+ var DEPTH_VALUES = [0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9.5, 10, 10.5, 11, 11.5, 12, 12.5, 13, 13.5, 14, 14.5, 15, 15.5];
 
  function getDepthColor(depth) {
    if (DEPTH_COLORS[depth]) return DEPTH_COLORS[depth];
@@ -623,7 +637,8 @@
  for (var fi = 0; fi < features.length; fi++) {
    var feature = features[fi];
    var d = feature.properties.depth;
-   if (d <= 0 || d % labelInterval !== 0) continue;
+   if (d <= 0) continue;
+   if (labelInterval > 1 && d % labelInterval !== 0) continue;
    if (!depthGroups[d]) depthGroups[d] = [];
    var coords = getFeatureCoords(feature);
    if (!coords || coords.length < 2) continue;
