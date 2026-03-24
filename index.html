@@ -311,6 +311,8 @@
  map.getPane('lakePane').style.zIndex = 300;
  map.createPane('contourPane');
  map.getPane('contourPane').style.zIndex = 400;
+ map.createPane('maskPane');
+ map.getPane('maskPane').style.zIndex = 450;
  var depthLabelPane = map.createPane('labelPane');
  map.getPane('labelPane').style.zIndex = 500;
 
@@ -411,6 +413,7 @@
  var geoJsonLayer = null;
  var lakeFillLayer = null;
  var lakeTurfPolygon = null;
+ var inverseMaskLayer = null;
 
  /* ===== SWITCH LAKE ===== */
  function switchLake(lakeId) {
@@ -424,6 +427,7 @@
  clearLabels();
  if (geoJsonLayer) { map.removeLayer(geoJsonLayer); geoJsonLayer = null; }
  if (lakeFillLayer) { map.removeLayer(lakeFillLayer); lakeFillLayer = null; }
+ if (inverseMaskLayer) { map.removeLayer(inverseMaskLayer); inverseMaskLayer = null; }
  lakeTurfPolygon = null;
  allContourFeatures = [];
  contourFeatures = [];
@@ -523,21 +527,38 @@
  fetch(lake.contourUrl)
  .then(function(res) { return res.json(); })
  .then(function(data) {
+   /* === Option 1: Extract boundary from GeoJSON for Patterson-style lakes === */
+   var boundaryFeature = null;
+   if (lake.lakeFillFromContour) {
+     for (var bi = 0; bi < data.features.length; bi++) {
+       if (data.features[bi].properties.type === 'boundary') {
+         boundaryFeature = data.features[bi];
+         break;
+       }
+     }
+     if (boundaryFeature && !lakeTurfPolygon) {
+       lakeTurfPolygon = turf.polygon([boundaryFeature.geometry.coordinates[0]]);
+     }
+   }
+
    data.features = data.features.filter(function(f) { return f.properties.depth > 0; });
 
    /* For lakes that derive their fill from the outermost contour (e.g. Patterson) */
    if (lake.lakeFillFromContour && !lakeFillLayer) {
-     var fillDepth = lake.lakeFillDepth || 2;
-     var fillFeature = null;
-     for (var i = 0; i < data.features.length; i++) {
-       var f = data.features[i];
-       if (f.properties.depth === fillDepth && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon')) {
-         fillFeature = f;
-         break;
+     /* Prefer the boundary feature for the lake fill shape */
+     var fillSource = boundaryFeature;
+     if (!fillSource) {
+       var fillDepth = lake.lakeFillDepth || 2;
+       for (var i = 0; i < data.features.length; i++) {
+         var f = data.features[i];
+         if (f.properties.depth === fillDepth && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon')) {
+           fillSource = f;
+           break;
+         }
        }
      }
-     if (fillFeature) {
-       lakeFillLayer = L.geoJSON(fillFeature, {
+     if (fillSource) {
+       lakeFillLayer = L.geoJSON(fillSource, {
          pane: 'lakePane',
          style: { color: 'none', fillColor: '#7FB5D5', fillOpacity: 1.0 },
          interactive: false
@@ -545,8 +566,8 @@
      }
    }
 
-   /* Clip contours to boundary if needed (Shabbona) */
-   if (lake.needsClipping && lakeTurfPolygon) {
+   /* Clip contours to boundary (Shabbona via needsClipping, Patterson via lakeFillFromContour+boundary) */
+   if (lakeTurfPolygon) {
      var clippedFeatures = [];
      data.features.forEach(function(f) {
        var segments = clipFeatureToLake(f);
@@ -556,7 +577,32 @@
      });
      data.features = clippedFeatures;
    }
+
    renderContours(data);
+
+   /* === Option 2: Inverse mask — covers land outside lake boundary === */
+   if (lakeTurfPolygon && !inverseMaskLayer) {
+     var bCoords = (boundaryFeature || {geometry:{coordinates:[[]]}}).geometry.coordinates[0];
+     if (!bCoords || bCoords.length === 0) {
+       /* Fallback: extract coords from lakeTurfPolygon */
+       bCoords = lakeTurfPolygon.geometry.coordinates[0];
+     }
+     var lakeBoundaryLatLngs = bCoords.map(function(c) { return [c[1], c[0]]; });
+     var worldBounds = [[-90,-180],[-90,180],[90,180],[90,-180],[-90,-180]];
+
+     /* Patterson-style lakes (lakeFillFromContour) use dark mask on contourPane;
+        other lakes use green land-color mask on maskPane */
+     var maskColor = lake.lakeFillFromContour ? '#1a1a2e' : '#8DB87A';
+     var maskPaneName = lake.lakeFillFromContour ? 'contourPane' : 'maskPane';
+
+     inverseMaskLayer = L.polygon([worldBounds, lakeBoundaryLatLngs], {
+       color: 'none',
+       fillColor: maskColor,
+       fillOpacity: 1,
+       interactive: false,
+       pane: maskPaneName
+     }).addTo(map);
+   }
  })
  .catch(function(err) { console.error('Failed to load GeoJSON:', err); });
  }
