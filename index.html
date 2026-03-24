@@ -1,26 +1,3 @@
-# OUTBOX — Add Lake Patterson to FishMap
-**Date:** 2026-03-23
-
-## Changes Made
-
-1. **Lake selector UI** — Two pill buttons ("Shabbona Lake" / "Lake Patterson") positioned top-left of the map, above the opacity slider. Active lake is dark blue (`#0f3460`), inactive is light gray (`#8899aa`). Buttons sit inside a Leaflet custom control so they respect the map's event handling.
-2. **Lake config object** — `LAKES` dictionary holds center, zoom, contour URL, boundary URL (null for Patterson), and `needsClipping` flag per lake.
-3. **`switchLake()` function** — Clears all existing contour layers, lake-fill polygon, and labels; resets state; fetches boundary (Shabbona) or skips straight to contours (Patterson). Centers map on the selected lake.
-4. **Patterson lake fill** — Uses the outermost contour (depth === 2) as the lake-fill polygon, since Patterson has no separate boundary file and the data is already clipped.
-5. **Title updates** — `<title>` element updates to reflect the active lake name.
-
-## Issues / Notes
-
-- No `.geojson` files were modified.
-- Patterson does not use boundary clipping (`needsClipping: false`). The `clipFeatureToLake()` path is only invoked for Shabbona.
-- GPS blue dot, catch logging, opacity slider, and coordinate display all continue to work across both lakes with no changes.
-- Initial load now goes through `switchLake('shabbona')` so the startup path is unified with the switching path. The inline boundary fetch that previously ran at the top level has been removed in favor of this.
-
----
-
-## Complete Updated `index.html`
-
-```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -711,4 +688,3 @@
 </script>
 </body>
 </html>
-```
