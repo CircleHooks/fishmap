@@ -1,22 +1,3 @@
-# OUTBOX — Label Declutter Fix
-**Date:** 2026-03-23
-
-## Changes Made
-
-1. **`MIN_LABEL_DISTANCE` increased** from `0.003` to `0.006` (~600m) — prevents labels from crowding in the dense southern basin.
-2. **Zoom < 13 label filter changed** from multiples of 5 to multiples of **10** — only 10, 20, 30ft depths are labeled at overview zoom. All depths shown at zoom >= 13.
-3. **`isTooClose()` updated** to accept a `[lng, lat]` point array matching the spec signature, keeping the global `placedPositions` check intact.
-
-## Issues / Notes
-
-- The existing `placedPositions` array already correctly tracked all placed labels globally and reset at the start of each `addLabels()` call. The root cause of crowding was primarily the too-small distance threshold (0.003 → 0.006) combined with showing too many labels at overview zoom (multiples of 5 → 10).
-- No changes made to `data/shabbona-lake.geojson` or `data/shabbona-boundary.geojson`.
-
----
-
-## Complete Updated `index.html`
-
-```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -223,6 +204,38 @@
  border-radius: 50%;
  box-shadow: 0 0 8px rgba(0, 122, 255, 0.8);
  }
+
+/* ===== LAKE SWITCHER ===== */
+#lake-switcher {
+  position: fixed;
+  top: 60px;
+  left: 10px;
+  z-index: 1000;
+  display: flex;
+  gap: 6px;
+}
+
+#lake-switcher button {
+  border: none;
+  border-radius: 20px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  white-space: nowrap;
+  background: #555;
+  color: #ccc;
+}
+
+#lake-switcher button.active {
+  background: #0f3460;
+  color: #fff;
+}
+
+#lake-switcher button:active {
+  transform: scale(0.95);
+}
 </style>
 </head>
 <body>
@@ -238,6 +251,12 @@
 
 <!-- ===== MAP ===== -->
 <div id="map"></div>
+
+<!-- ===== LAKE SWITCHER ===== -->
+<div id="lake-switcher">
+  <button id="btn-shabbona" class="active" onclick="switchLake('shabbona')">🏞 Shabbona</button>
+  <button id="btn-patterson" onclick="switchLake('patterson')">🎣 Patterson</button>
+</div>
 
 <!-- ===== OPACITY SLIDER ===== -->
 <div id="slider-container">
@@ -268,6 +287,10 @@
 
  var map = L.map('map', { center: LAKE_CENTER, zoom: DEFAULT_ZOOM, zoomControl: true });
 
+ /* ===== LAKE STATE ===== */
+ var activeLake = 'shabbona';
+ var lakeFillLayer = null;
+
  map.createPane('lakePane');
  map.getPane('lakePane').style.zIndex = 300;
  map.createPane('contourPane');
@@ -297,17 +320,62 @@
  var geoJsonLayer = null;
  var lakeTurfPolygon = null;
 
- fetch('data/shabbona-boundary.geojson')
- .then(function(res) { return res.json(); })
- .then(function(geojson) {
- var feature = geojson.features[0];
- if (!feature) { loadContours(); return; }
- var latlngs = feature.geometry.coordinates[0].map(function(c) { return [c[1], c[0]]; });
- L.polygon(latlngs, { color: 'none', fillColor: '#7FB5D5', fillOpacity: 1.0, interactive: false, pane: 'lakePane' }).addTo(map);
- lakeTurfPolygon = turf.polygon([feature.geometry.coordinates[0]]);
- loadContours();
- })
- .catch(function() { loadContours(); });
+ function loadShabbona() {
+   if (geoJsonLayer) { map.removeLayer(geoJsonLayer); geoJsonLayer = null; }
+   if (lakeFillLayer) { map.removeLayer(lakeFillLayer); lakeFillLayer = null; }
+   clearLabels();
+   allContourFeatures = []; contourFeatures = [];
+   lakeTurfPolygon = null;
+   map.setView([41.745230, -88.862420], 14);
+   fetch('data/shabbona-boundary.geojson')
+   .then(function(res) { return res.json(); })
+   .then(function(geojson) {
+     var feature = geojson.features[0];
+     if (!feature) { loadContours('data/shabbona-lake.geojson', true); return; }
+     var latlngs = feature.geometry.coordinates[0].map(function(c) { return [c[1], c[0]]; });
+     lakeFillLayer = L.polygon(latlngs, { color: 'none', fillColor: '#7FB5D5', fillOpacity: 1.0, interactive: false, pane: 'lakePane' });
+     lakeFillLayer.addTo(map);
+     lakeTurfPolygon = turf.polygon([feature.geometry.coordinates[0]]);
+     loadContours('data/shabbona-lake.geojson', true);
+   })
+   .catch(function() { loadContours('data/shabbona-lake.geojson', true); });
+ }
+
+ function loadPatterson() {
+   if (geoJsonLayer) { map.removeLayer(geoJsonLayer); geoJsonLayer = null; }
+   if (lakeFillLayer) { map.removeLayer(lakeFillLayer); lakeFillLayer = null; }
+   clearLabels();
+   allContourFeatures = []; contourFeatures = [];
+   lakeTurfPolygon = null;
+   map.setView([41.7520, -88.2720], 15);
+   fetch('data/lake-patterson.geojson')
+   .then(function(res) { return res.json(); })
+   .then(function(data) {
+     var outerFeature = null;
+     for (var i = 0; i < data.features.length; i++) {
+       if (data.features[i].properties.depth === 2) { outerFeature = data.features[i]; break; }
+     }
+     if (outerFeature) {
+       var fillCoords = outerFeature.geometry.coordinates[0];
+       var latlngs = fillCoords.map(function(c) { return [c[1], c[0]]; });
+       lakeFillLayer = L.polygon(latlngs, { color: 'none', fillColor: '#7FB5D5', fillOpacity: 1.0, interactive: false, pane: 'lakePane' });
+       lakeFillLayer.addTo(map);
+     }
+     data.features = data.features.filter(function(f) { return f.properties.depth > 0; });
+     renderContours(data);
+   })
+   .catch(function(err) { console.error('Failed to load Patterson GeoJSON:', err); });
+ }
+
+ window.switchLake = function(name) {
+   if (name === activeLake) return;
+   activeLake = name;
+   document.getElementById('btn-shabbona').classList.toggle('active', name === 'shabbona');
+   document.getElementById('btn-patterson').classList.toggle('active', name === 'patterson');
+   if (name === 'shabbona') { loadShabbona(); } else { loadPatterson(); }
+ };
+
+ loadShabbona();
 
  /* Clip ALL contour features to lake boundary.
     - Polygon/MultiPolygon: use turf.intersect to clip filled areas to lake boundary.
@@ -378,12 +446,12 @@
  }
  }
 
- function loadContours() {
- fetch('data/shabbona-lake.geojson')
+ function loadContours(path, clip) {
+ fetch(path || 'data/shabbona-lake.geojson')
  .then(function(res) { return res.json(); })
  .then(function(data) {
    data.features = data.features.filter(function(f) { return f.properties.depth > 0; });
-   if (lakeTurfPolygon) {
+   if (clip && lakeTurfPolygon) {
      var clippedFeatures = [];
      data.features.forEach(function(f) {
        var segments = clipFeatureToLake(f);
@@ -559,4 +627,3 @@
 </script>
 </body>
 </html>
-```
